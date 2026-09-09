@@ -1,0 +1,9 @@
+.git
+.gradle
+build
+out
+bin
+.idea
+*.iml
+*.log
+HELP.md
