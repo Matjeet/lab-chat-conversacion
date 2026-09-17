@@ -1,6 +1,7 @@
 package com.arquetipo.demo.conversacion.web;
 
 import java.util.Map;
+import java.util.regex.Pattern;
 import org.springframework.http.server.ServerHttpRequest;
 import org.springframework.http.server.ServerHttpResponse;
 import org.springframework.web.socket.WebSocketHandler;
@@ -11,20 +12,26 @@ import org.springframework.web.socket.server.HandshakeInterceptor;
  * los atributos de la sesion, para que {@link ChatWebSocketHandler} no tenga que reparsear la
  * URL en cada mensaje.
  *
- * <p>Identificacion minima a proposito: no valida contra ningun proveedor de identidad
- * todavia (pendiente decidir si reutiliza la sesion de Firebase de {@code chat-frontend} o
- * pasa por {@code chat-gateway}, ver {@code CLAUDE.md}).
+ * <p>{@code usuario} es el {@code username} de {@code chat-registro}: mismo formato exigido
+ * alli (3-50 caracteres, solo {@code A-Z a-z 0-9 . _ -}), para que ambos servicios hablen del
+ * mismo identificador. Lo que sigue sin resolver es la <b>autenticacion</b>: este interceptor
+ * valida el formato, no que quien se conecta sea realmente el dueno de ese username — no hay
+ * token ni sesion de Firebase de por medio todavia (pendiente decidir si reutiliza la sesion
+ * de {@code chat-frontend} o pasa por {@code chat-gateway}, ver {@code CLAUDE.md}).
  */
 public class UsuarioHandshakeInterceptor implements HandshakeInterceptor {
 
 	static final String ATRIBUTO_USUARIO = "usuario";
+
+	/** Mismo formato que {@code RegistroRequest.username} en chat-registro. */
+	private static final Pattern FORMATO_USERNAME = Pattern.compile("^[a-zA-Z0-9._-]{3,50}$");
 
 	@Override
 	public boolean beforeHandshake(ServerHttpRequest request, ServerHttpResponse response,
 			WebSocketHandler wsHandler, Map<String, Object> attributes) {
 		String path = request.getURI().getPath();
 		String usuario = path.substring(path.lastIndexOf('/') + 1);
-		if (usuario.isBlank()) {
+		if (!FORMATO_USERNAME.matcher(usuario).matches()) {
 			return false;
 		}
 		attributes.put(ATRIBUTO_USUARIO, usuario);

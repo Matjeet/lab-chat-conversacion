@@ -43,12 +43,21 @@ ws://localhost:8082/ws/chat/mateo
 `remitente = {usuario}`, y todo mensaje dirigido a `{usuario}` se reenvía por esa conexión si
 está abierta.
 
-> ⚠️ **`{usuario}` no se valida contra ningún proveedor de identidad.** Cualquiera que
-> conozca (o adivine) un nombre de usuario puede conectarse como si fuera él y leer/mandar
-> mensajes en su nombre — no hay token, sesión de Firebase ni nada equivalente todavía (ver
-> `CLAUDE.md`, pendiente explícito). **No usar este servicio con datos reales hasta que esto
-> se resuelva.** Si `{usuario}` llega vacío, el servidor rechaza el *handshake* (no hay
-> conexión que abrir).
+**`{usuario}` es el `username` de `chat-registro`** (decisión explícita: no es un identificador
+propio de este servicio). Mismo formato que exige `chat-registro/docs/contratos-api.md` §3.1:
+
+| Regla | Valor |
+|---|---|
+| Longitud | 3–50 caracteres |
+| Caracteres permitidos | `A–Z a–z 0–9 . _ -` |
+
+Un `{usuario}` que no cumpla el formato hace que el servidor rechace el *handshake* (la
+conexión ni se abre).
+
+> ⚠️ **El formato se valida; la identidad no.** Que `{usuario}` tenga la forma de un username
+> válido no significa que quien se conectó sea realmente el dueño de esa cuenta — no hay
+> token, sesión de Firebase ni nada equivalente todavía comprobando eso (ver `CLAUDE.md`,
+> pendiente explícito). **No usar este servicio con datos reales hasta que esto se resuelva.**
 
 ### 2.2 Mandar un mensaje (cliente → servidor)
 
@@ -63,7 +72,7 @@ Un *frame* de texto con este JSON:
 
 | Campo | Tipo | Obligatorio | Reglas |
 |---|---|---|---|
-| `destinatario` | string | sí | No vacío. Es el `{usuario}` de la otra conexión, no se comprueba que exista. |
+| `destinatario` | string | sí | Mismo formato que `{usuario}` (username de chat-registro, 3–50 caracteres, `A–Z a–z 0–9 . _ -`). Es el `{usuario}` de la otra conexión — no se comprueba que exista como cuenta real, solo el formato. |
 | `contenido` | string | sí | No vacío, máx. 2000 caracteres. Solo texto — nada de adjuntos todavía. |
 
 `remitente` **no** va en este mensaje: lo pone el servidor a partir del `{usuario}` de la
@@ -126,6 +135,10 @@ previos al conectarse por WebSocket. El orden de `usuarioA`/`usuarioB` en la URL
 | Método | `GET` |
 | Path | `/api/v1/conversaciones/{usuarioA}/{usuarioB}` |
 | Autenticación | Ninguna (misma advertencia de §2.1: cualquiera puede leer el historial de cualquier par de usuarios) |
+
+`usuarioA`/`usuarioB` son también el `username` de `chat-registro` (§2.1), pero a diferencia
+del WebSocket, **este endpoint todavía no valida el formato** — un valor que no exista o no
+cumpla el patrón simplemente no encuentra mensajes y devuelve `[]` (ver más abajo).
 
 #### Respuesta `200 OK`
 
@@ -206,11 +219,13 @@ descarta (§2.2), no hay respuesta de error por el socket.
 
 ## 5. Notas de integración para el frontend
 
-1. **No hay autenticación todavía.** No trates este servicio como seguro para datos reales
-   hasta que `{usuario}` se valide contra un proveedor de identidad (§2.1). Cuando eso se
+1. **No hay autenticación todavía.** `{usuario}` se valida en formato (es un username de
+   chat-registro), pero no se comprueba que quien se conecta sea su dueño real — no trates
+   este servicio como seguro para datos reales hasta que eso se resuelva (§2.1). Cuando se
    resuelva, este documento cambiará.
-2. **El WebSocket no confirma ni rechaza mensajes inválidos.** Valida `destinatario` (no
-   vacío) y `contenido` (no vacío, ≤ 2000 caracteres) en el cliente antes de mandar.
+2. **El WebSocket no confirma ni rechaza mensajes inválidos.** Valida `destinatario` (formato
+   de username: 3–50 caracteres, `A–Z a–z 0–9 . _ -`) y `contenido` (no vacío, ≤ 2000
+   caracteres) en el cliente antes de mandar.
 3. **El mensaje que llega por el socket es la única confirmación de envío.** No hay un *ack*
    separado del *frame* que se reenvía al propio remitente.
 4. **Un destinatario desconectado no recibe nada en tiempo real**, pero el mensaje queda
@@ -229,7 +244,7 @@ descarta (§2.2), no hay respuesta de error por el socket.
 ```ts
 // Mensaje que manda el cliente por el WebSocket
 export interface MensajeEntrante {
-  destinatario: string; // no vacio
+  destinatario: string; // username de chat-registro: 3-50, /^[A-Za-z0-9._-]+$/
   contenido: string;    // no vacio, <= 2000 caracteres
 }
 
@@ -294,4 +309,5 @@ equivalente para el WebSocket.
 
 | Fecha | Cambio |
 |---|---|
+| 2026-09-17 | Se decide que `{usuario}`/`destinatario` es el `username` de chat-registro; se valida su formato (3–50, `A–Z a–z 0–9 . _ -`) en el *handshake* del WebSocket y en `MensajeEntrante.destinatario`. La identidad real sigue sin verificarse (pendiente). |
 | 2026-09-15 | Versión inicial: WebSocket `/ws/chat/{usuario}` y `GET /api/v1/conversaciones/{usuarioA}/{usuarioB}`. |

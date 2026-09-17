@@ -5,8 +5,9 @@ usuarios. Los mensajes son de texto por ahora y se persisten en **MongoDB**.
 
 > Estado actual: primera implementación (nace como copia del arquetipo MVC compartido, ver
 > `chat-registro/` y `chat-gateway/`). Cubre el envío 1 a 1 por WebSocket y el historial de una
-> conversación; falta decidir la identificación real del usuario (hoy es solo un `{usuario}`
-> de la URL, sin validar contra ningún proveedor — ver `CLAUDE.md`).
+> conversación. `{usuario}` es el `username` de `chat-registro` (mismo formato, validado en el
+> *handshake*); falta la autenticación real — nada comprueba todavía que quien se conecta sea
+> el dueño de ese username — ver `CLAUDE.md` y `docs/contratos-api.md` §2.1.
 
 ## Arquitectura
 
@@ -21,7 +22,9 @@ Paquete por feature bajo `com.arquetipo.demo`, mismo patrón que `chat-registro/
   - `ChatWebSocketHandler` — punto de entrada del chat, en `/ws/chat/{usuario}`. Persiste
     cada mensaje entrante y lo reenvía al remitente y al destinatario si están conectados
     (registro de sesiones en memoria, no apto para más de una instancia todavía).
-  - `UsuarioHandshakeInterceptor` — saca el `{usuario}` de la URL de conexión.
+  - `UsuarioHandshakeInterceptor` — saca el `{usuario}` de la URL de conexión y valida que
+    tenga formato de username de chat-registro (3–50 caracteres, `A–Z a–z 0–9 . _ -`);
+    rechaza el *handshake* si no.
   - `ConversacionController` — `GET /api/v1/conversaciones/{usuarioA}/{usuarioB}`, historial
     para que un cliente cargue los mensajes previos al conectarse.
 
