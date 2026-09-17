@@ -26,7 +26,8 @@ Paquete por feature bajo `com.arquetipo.demo`, mismo patrón que `chat-registro/
     tenga formato de username de chat-registro (3–50 caracteres, `A–Z a–z 0–9 . _ -`);
     rechaza el *handshake* si no.
   - `ConversacionController` — `GET /api/v1/conversaciones/{usuarioA}/{usuarioB}`, historial
-    para que un cliente cargue los mensajes previos al conectarse.
+    paginado (`page`/`size`/`sort`, ver `docs/contratos-api.md` §3) para que un cliente cargue
+    los mensajes previos al conectarse.
 
 ## Stack
 
@@ -59,10 +60,14 @@ Requiere una instancia de MongoDB local (por defecto `mongodb://localhost:27017`
 | Recurso | URL |
 |---------|-----|
 | WebSocket del chat | ws://localhost:8082/ws/chat/{usuario} |
-| Historial de una conversación | http://localhost:8082/api/v1/conversaciones/{usuarioA}/{usuarioB} |
+| Historial de una conversación (paginado) | http://localhost:8082/api/v1/conversaciones/{usuarioA}/{usuarioB}?page=0&size=20 |
 | Swagger UI | http://localhost:8082/swagger-ui.html |
 | OpenAPI JSON | http://localhost:8082/v3/api-docs |
 | Actuator health | http://localhost:8082/actuator/health |
+
+Paginación del historial: `page` (0-indexada), `size` (por defecto 20, máx. 100) y `sort`
+(por defecto `enviadoEn,asc`) — mismos defaults que `spring.data.web.pageable` en
+`application.yml`.
 
 Orígenes permitidos para el WebSocket: variable de entorno `WEBSOCKET_ALLOWED_ORIGINS`
 (lista separada por comas; por defecto solo `http://localhost:3000`, el frontend en

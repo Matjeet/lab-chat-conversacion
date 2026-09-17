@@ -1,8 +1,8 @@
 package com.arquetipo.demo.conversacion.repository;
 
 import com.arquetipo.demo.conversacion.domain.Mensaje;
-import java.util.List;
-import org.springframework.data.domain.Sort;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.mongodb.repository.MongoRepository;
 import org.springframework.data.mongodb.repository.Query;
 
@@ -12,5 +12,5 @@ import org.springframework.data.mongodb.repository.Query;
 public interface MensajeRepository extends MongoRepository<Mensaje, String> {
 
 	@Query("{ $or: [ { remitente: ?0, destinatario: ?1 }, { remitente: ?1, destinatario: ?0 } ] }")
-	List<Mensaje> findConversacion(String usuarioA, String usuarioB, Sort sort);
+	Page<Mensaje> findConversacion(String usuarioA, String usuarioB, Pageable pageable);
 }

@@ -2,9 +2,13 @@ package com.arquetipo.demo.conversacion.web;
 
 import com.arquetipo.demo.conversacion.service.ConversacionService;
 import com.arquetipo.demo.conversacion.web.dto.MensajeResponse;
+import com.arquetipo.demo.conversacion.web.dto.PageResponse;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
-import java.util.List;
+import org.springdoc.core.annotations.ParameterObject;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
+import org.springframework.data.web.PageableDefault;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -26,9 +30,15 @@ public class ConversacionController {
 		this.service = service;
 	}
 
-	@Operation(summary = "Historial de una conversacion entre dos usuarios, ordenado por fecha de envio")
+	@Operation(summary = "Historial paginado de una conversacion entre dos usuarios, "
+			+ "ordenado por fecha de envio (mas antiguo primero por defecto)")
 	@GetMapping("/{usuarioA}/{usuarioB}")
-	public List<MensajeResponse> historial(@PathVariable String usuarioA, @PathVariable String usuarioB) {
-		return service.historial(usuarioA, usuarioB);
+	public PageResponse<MensajeResponse> historial(
+			@PathVariable String usuarioA,
+			@PathVariable String usuarioB,
+			@ParameterObject
+			@PageableDefault(size = 20, sort = "enviadoEn", direction = Sort.Direction.ASC)
+			Pageable pageable) {
+		return service.historial(usuarioA, usuarioB, pageable);
 	}
 }

@@ -5,9 +5,10 @@ import com.arquetipo.demo.conversacion.mapper.MensajeMapper;
 import com.arquetipo.demo.conversacion.repository.MensajeRepository;
 import com.arquetipo.demo.conversacion.web.dto.MensajeEntrante;
 import com.arquetipo.demo.conversacion.web.dto.MensajeResponse;
-import java.util.List;
+import com.arquetipo.demo.conversacion.web.dto.PageResponse;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.data.domain.Sort;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 
 /**
@@ -42,10 +43,9 @@ public class ConversacionService {
 		return mapper.toResponse(guardado);
 	}
 
-	public List<MensajeResponse> historial(String usuarioA, String usuarioB) {
-		return repository.findConversacion(usuarioA, usuarioB, Sort.by(Sort.Direction.ASC, "enviadoEn"))
-				.stream()
-				.map(mapper::toResponse)
-				.toList();
+	public PageResponse<MensajeResponse> historial(String usuarioA, String usuarioB, Pageable pageable) {
+		Page<MensajeResponse> pagina = repository.findConversacion(usuarioA, usuarioB, pageable)
+				.map(mapper::toResponse);
+		return PageResponse.from(pagina);
 	}
 }

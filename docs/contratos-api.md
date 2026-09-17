@@ -134,45 +134,74 @@ previos al conectarse por WebSocket. El orden de `usuarioA`/`usuarioB` en la URL
 |---|---|
 | Método | `GET` |
 | Path | `/api/v1/conversaciones/{usuarioA}/{usuarioB}` |
+| Query params | `page`, `size`, `sort` — paginación estándar de Spring Data (ver tabla abajo) |
 | Autenticación | Ninguna (misma advertencia de §2.1: cualquiera puede leer el historial de cualquier par de usuarios) |
 
 `usuarioA`/`usuarioB` son también el `username` de `chat-registro` (§2.1), pero a diferencia
 del WebSocket, **este endpoint todavía no valida el formato** — un valor que no exista o no
-cumpla el patrón simplemente no encuentra mensajes y devuelve `[]` (ver más abajo).
+cumpla el patrón simplemente no encuentra mensajes y devuelve una página vacía (ver más abajo).
+
+| Query param | Tipo | Por defecto | Notas |
+|---|---|---|---|
+| `page` | number | `0` | Primera página es `0`, no `1`. |
+| `size` | number | `20` | Máximo `100`; un valor mayor se recorta a `100`. |
+| `sort` | string | `enviadoEn,asc` | Formato `campo,dirección` (`asc`/`desc`). Repetible para varios campos. Los campos válidos son los de `MensajeResponse` (§2.3): `id`, `remitente`, `destinatario`, `contenido`, `enviadoEn`. |
 
 #### Respuesta `200 OK`
 
-`Content-Type: application/json` — array de mensajes (ver estructura en §2.3), ordenados por
-`enviadoEn` ascendente (el más antiguo primero):
+`Content-Type: application/json` — una página de mensajes (ver estructura de cada mensaje en
+§2.3), ordenados por `enviadoEn` ascendente por defecto (el más antiguo primero):
 
 ```json
-[
-  {
-    "id": "66f1c2a8b4c9a12345678901",
-    "remitente": "mateo",
-    "destinatario": "ana",
-    "contenido": "Hola!",
-    "enviadoEn": "2026-09-15T20:53:47.441193Z"
-  },
-  {
-    "id": "66f1c2a8b4c9a12345678902",
-    "remitente": "ana",
-    "destinatario": "mateo",
-    "contenido": "Hola, que tal?",
-    "enviadoEn": "2026-09-15T20:53:52.001045Z"
-  }
-]
+{
+  "content": [
+    {
+      "id": "66f1c2a8b4c9a12345678901",
+      "remitente": "mateo",
+      "destinatario": "ana",
+      "contenido": "Hola!",
+      "enviadoEn": "2026-09-15T20:53:47.441193Z"
+    },
+    {
+      "id": "66f1c2a8b4c9a12345678902",
+      "remitente": "ana",
+      "destinatario": "mateo",
+      "contenido": "Hola, que tal?",
+      "enviadoEn": "2026-09-15T20:53:52.001045Z"
+    }
+  ],
+  "page": 0,
+  "size": 20,
+  "totalElements": 2,
+  "totalPages": 1,
+  "first": true,
+  "last": true,
+  "empty": false
+}
 ```
 
-Si no hay mensajes entre ambos usuarios, la respuesta es `200` con `[]` — **no** es un `404`
-(no existe el concepto de "conversación" como recurso propio, solo mensajes).
+| Campo | Tipo | Descripción |
+|---|---|---|
+| `content` | array | Los mensajes de esta página, en el orden pedido. |
+| `page` | number | Página actual (0-indexada). |
+| `size` | number | Tamaño de página pedido (o el máximo, si se pidió más de 100). |
+| `totalElements` | number | Total de mensajes en la conversación, sin paginar. |
+| `totalPages` | number | Total de páginas con ese `size`. |
+| `first` / `last` | boolean | Si esta es la primera/última página. |
+| `empty` | boolean | Si `content` está vacío. |
 
-No hay paginación todavía: el historial completo viaja en una sola respuesta.
+Si no hay mensajes entre ambos usuarios, la respuesta es `200` con `content: []`,
+`totalElements: 0` — **no** es un `404` (no existe el concepto de "conversación" como recurso
+propio, solo mensajes).
 
 #### Ejemplo `curl`
 
 ```bash
+# primera página, tamaño por defecto (20), mas antiguo primero
 curl http://localhost:8082/api/v1/conversaciones/mateo/ana
+
+# segunda página de 50, mas reciente primero
+curl "http://localhost:8082/api/v1/conversaciones/mateo/ana?page=1&size=50&sort=enviadoEn,desc"
 ```
 
 ---
@@ -236,6 +265,10 @@ descarta (§2.2), no hay respuesta de error por el socket.
    otro.
 6. **`id` es un `ObjectId` de MongoDB en texto** (24 caracteres hexadecimales), no un número
    incremental — no asumas que se puede ordenar u operar como número.
+7. **El historial es paginado (§3), por defecto más antiguo primero.** Para un chat típico
+   (cargar los últimos mensajes al abrir la conversación) probablemente quieras pedir
+   `sort=enviadoEn,desc` y luego invertir `content` en el cliente para pintarlo cronológico —
+   el servidor no expone un "traer los N más recientes" distinto de ordenar descendente.
 
 ---
 
@@ -255,6 +288,18 @@ export interface MensajeResponse {
   destinatario: string;
   contenido: string;
   enviadoEn: string;    // ISO-8601 UTC
+}
+
+// Respuesta paginada del historial (GET /api/v1/conversaciones/{usuarioA}/{usuarioB})
+export interface PageResponse<T> {
+  content: T[];
+  page: number;
+  size: number;
+  totalElements: number;
+  totalPages: number;
+  first: boolean;
+  last: boolean;
+  empty: boolean;
 }
 
 // Error RFC 9457 (solo en el endpoint REST, nunca por el WebSocket)
@@ -286,8 +331,12 @@ export interface ProblemDetail {
    de `remitente` y `destinatario` (si las hay).
 
 El historial (§3) usa la misma colección: `MensajeRepository.findConversacion` busca por
-`remitente`/`destinatario` en ambos sentidos y `ConversacionService.historial` lo ordena por
-`enviadoEn` ascendente.
+`remitente`/`destinatario` en ambos sentidos, recibe un `Pageable` (Spring Data lo arma a
+partir de `page`/`size`/`sort`, con `enviadoEn` ascendente por defecto vía
+`@PageableDefault` en `ConversacionController`) y devuelve un `Page<Mensaje>`;
+`ConversacionService.historial` lo mapea a `PageResponse<MensajeResponse>` — el mismo
+envoltorio de paginación del arquetipo base, para no acoplar el contrato HTTP a la
+serialización interna de Spring Data.
 
 Errores de la aplicación (si los hubiera) los traduce `GlobalExceptionHandler`
 (`com.arquetipo.demo.common.web`) al formato de §4 — pero solo para el endpoint REST: no hay
@@ -309,5 +358,6 @@ equivalente para el WebSocket.
 
 | Fecha | Cambio |
 |---|---|
-| 2026-09-17 | Se decide que `{usuario}`/`destinatario` es el `username` de chat-registro; se valida su formato (3–50, `A–Z a–z 0–9 . _ -`) en el *handshake* del WebSocket y en `MensajeEntrante.destinatario`. La identidad real sigue sin verificarse (pendiente). |
+| 2026-09-17 | `GET /api/v1/conversaciones/{usuarioA}/{usuarioB}` pasa a devolver una página (`PageResponse`) en vez del array completo — query params `page`/`size`/`sort`, por defecto `size=20`, ordenado por `enviadoEn` ascendente. |
+| 2026-09-17 (anterior) | Se decide que `{usuario}`/`destinatario` es el `username` de chat-registro; se valida su formato (3–50, `A–Z a–z 0–9 . _ -`) en el *handshake* del WebSocket y en `MensajeEntrante.destinatario`. La identidad real sigue sin verificarse (pendiente). |
 | 2026-09-15 | Versión inicial: WebSocket `/ws/chat/{usuario}` y `GET /api/v1/conversaciones/{usuarioA}/{usuarioB}`. |
