@@ -47,8 +47,12 @@ Paquete por feature bajo `com.arquetipo.demo`, mismo patrón que `chat-registro/
 ## Arrancar
 
 Requiere una instancia de MongoDB local (por defecto `mongodb://localhost:27017`, ver
-`spring.data.mongodb.uri` en `application.yml`, configurable con la variable de entorno
-`MONGODB_URI`).
+`spring.mongodb.uri` en `application.yml`, configurable con la variable de entorno
+`MONGODB_URI`). **Ojo:** en Spring Boot 4.1 la conexión a Mongo vive bajo `spring.mongodb`,
+no bajo `spring.data.mongodb` (ese prefijo cambió de significado: ahora es solo para opciones
+de Spring Data como `auto-index-creation`, ya no tiene `uri`/`database`) — un `spring.data.mongodb.uri`
+en `application.yml` se ignora en silencio y la app cae al default interno de Spring Boot
+(`mongodb://localhost/test`), sin ningún error visible.
 
 ```bash
 ./gradlew bootRun

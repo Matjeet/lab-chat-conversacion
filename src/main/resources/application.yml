@@ -3,13 +3,17 @@ spring:
     name: chat-conversacion
 
   data:
-    mongodb:
-      uri: ${MONGODB_URI:mongodb://localhost:27017/chat_conversacion}
     web:
       pageable:
         default-page-size: 20
         max-page-size: 100
         one-indexed-parameters: false
+
+  # Conexion a MongoDB: en Spring Boot 4.1 esto vive bajo spring.mongodb (modulo
+  # spring-boot-mongodb), no bajo spring.data.mongodb (que ahora es solo opciones de
+  # Spring Data: auto-index-creation, field-naming-strategy, etc., sin uri/database).
+  mongodb:
+    uri: ${MONGODB_URI:mongodb://localhost:27017/chat_conversacion}
 
 server:
   port: 8082
