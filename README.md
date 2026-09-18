@@ -27,7 +27,8 @@ Paquete por feature bajo `com.arquetipo.demo`, mismo patrón que `chat-registro/
     rechaza el *handshake* si no.
   - `ConversacionController` — `GET /api/v1/conversaciones/{usuarioA}/{usuarioB}`, historial
     paginado (`page`/`size`/`sort`, ver `docs/contratos-api.md` §3) para que un cliente cargue
-    los mensajes previos al conectarse.
+    los mensajes previos al conectarse. CORS habilitado ahí mismo (`@CrossOrigin`) via
+    `CORS_ALLOWED_ORIGINS`.
 
 ## Stack
 
@@ -71,7 +72,9 @@ Paginación del historial: `page` (0-indexada), `size` (por defecto 20, máx. 10
 
 Orígenes permitidos para el WebSocket: variable de entorno `WEBSOCKET_ALLOWED_ORIGINS`
 (lista separada por comas; por defecto solo `http://localhost:3000`, el frontend en
-desarrollo).
+desarrollo). Para el endpoint REST del historial es una variable **distinta**:
+`CORS_ALLOWED_ORIGINS` (y `CORS_ALLOW_CREDENTIALS`, por defecto `false`) — mismo criterio que
+`chat-registro`. Un origen fuera de la lista recibe `403 Invalid CORS request`.
 
 Tests: `./gradlew test` · Empaquetar: `./gradlew bootJar` · Docker: `docker build -t chat-conversacion .`
 

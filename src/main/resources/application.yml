@@ -32,6 +32,13 @@ springdoc:
     operations-sorter: method
     tags-sorter: alpha
 
+app:
+  cors:
+    # Origenes permitidos para /api/**. Lista separada por comas, cada uno con esquema +
+    # host + puerto y SIN barra final (mismo criterio que CORS_ALLOWED_ORIGINS en chat-registro).
+    allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:3000}
+    allow-credentials: ${CORS_ALLOW_CREDENTIALS:false}
+
 logging:
   level:
     com.arquetipo.demo: DEBUG

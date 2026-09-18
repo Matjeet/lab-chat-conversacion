@@ -21,6 +21,7 @@ web, app móvil, otro servicio) los consuma sin leer el código.
 | Fechas y horas | ISO-8601 en UTC, con precisión de microsegundos — ej. `2026-09-15T20:53:47.441193Z` |
 | Autenticación | **Ninguna todavía.** Ver la advertencia de §2.1 — es el punto más importante de este documento. |
 | Orígenes permitidos (WebSocket) | `WEBSOCKET_ALLOWED_ORIGINS` (lista separada por comas). Por defecto solo `http://localhost:3000`. Un origen fuera de la lista hace fallar el *handshake*. |
+| CORS (endpoint REST) | Habilitado en `ConversacionController` (`@CrossOrigin`) para `/api/v1/conversaciones/**`. Orígenes vía `CORS_ALLOWED_ORIGINS` (lista separada por comas; por defecto solo `http://localhost:3000`, mismo criterio que `chat-registro`), credenciales vía `CORS_ALLOW_CREDENTIALS` (por defecto `false`). Un origen fuera de la lista recibe `403 Invalid CORS request`. Es una configuración **independiente** de `WEBSOCKET_ALLOWED_ORIGINS`: no cubre el WebSocket. |
 
 ### Entornos
 
@@ -358,6 +359,7 @@ equivalente para el WebSocket.
 
 | Fecha | Cambio |
 |---|---|
+| 2026-09-18 | Se habilita CORS en `ConversacionController` (`CORS_ALLOWED_ORIGINS` / `CORS_ALLOW_CREDENTIALS`, por defecto `http://localhost:3000`). Es una configuración aparte de `WEBSOCKET_ALLOWED_ORIGINS`. |
 | 2026-09-17 | `GET /api/v1/conversaciones/{usuarioA}/{usuarioB}` pasa a devolver una página (`PageResponse`) en vez del array completo — query params `page`/`size`/`sort`, por defecto `size=20`, ordenado por `enviadoEn` ascendente. |
 | 2026-09-17 (anterior) | Se decide que `{usuario}`/`destinatario` es el `username` de chat-registro; se valida su formato (3–50, `A–Z a–z 0–9 . _ -`) en el *handshake* del WebSocket y en `MensajeEntrante.destinatario`. La identidad real sigue sin verificarse (pendiente). |
 | 2026-09-15 | Versión inicial: WebSocket `/ws/chat/{usuario}` y `GET /api/v1/conversaciones/{usuarioA}/{usuarioB}`. |

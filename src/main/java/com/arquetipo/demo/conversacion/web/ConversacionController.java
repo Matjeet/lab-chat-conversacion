@@ -9,6 +9,7 @@ import org.springdoc.core.annotations.ParameterObject;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.web.PageableDefault;
+import org.springframework.web.bind.annotation.CrossOrigin;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -18,10 +19,17 @@ import org.springframework.web.bind.annotation.RestController;
  * Historial de una conversacion 1 a 1. El envio de mensajes nuevos va por
  * {@link ChatWebSocketHandler} (WebSocket, {@code /ws/chat/{usuario}}), no por aqui: este
  * endpoint REST solo sirve para que un cliente cargue los mensajes previos al conectarse.
+ *
+ * <p>Origenes permitidos por CORS via {@code CORS_ALLOWED_ORIGINS} (mismo criterio que
+ * {@code chat-registro}); no aplica al WebSocket, que tiene su propia variable
+ * {@code WEBSOCKET_ALLOWED_ORIGINS} (ver {@link ChatWebSocketConfig}).
  */
 @Tag(name = "Conversaciones", description = "Historial de mensajes de una conversacion 1 a 1")
 @RestController
 @RequestMapping("/api/v1/conversaciones")
+@CrossOrigin(
+		origins = "${app.cors.allowed-origins:http://localhost:3000}",
+		allowCredentials = "${app.cors.allow-credentials:false}")
 public class ConversacionController {
 
 	private final ConversacionService service;
