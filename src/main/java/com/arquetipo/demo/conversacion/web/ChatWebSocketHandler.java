@@ -44,6 +44,7 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
 		this.validator = validator;
 	}
 
+	// Registra la sesion recien conectada en el mapa, para poder reenviarle mensajes despues.
 	@Override
 	public void afterConnectionEstablished(WebSocketSession session) {
 		String usuario = usuarioDe(session);
@@ -51,6 +52,7 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
 		log.info("Sesion de chat abierta. usuario='{}'", usuario);
 	}
 
+	// Quita la sesion del mapa al desconectarse, para no reenviarle mensajes a un socket cerrado.
 	@Override
 	public void afterConnectionClosed(WebSocketSession session, CloseStatus status) {
 		String usuario = usuarioDe(session);
@@ -58,6 +60,7 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
 		log.info("Sesion de chat cerrada. usuario='{}' status={}", usuario, status);
 	}
 
+	// Parsea, valida, persiste y reenvia un mensaje entrante al remitente y al destinatario.
 	@Override
 	protected void handleTextMessage(WebSocketSession session, TextMessage message) throws IOException {
 		String remitente = usuarioDe(session);
@@ -84,6 +87,7 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
 		enviarSiConectado(entrante.destinatario(), payload);
 	}
 
+	// Manda el payload por la sesion de ese usuario, solo si esta conectado ahora mismo.
 	private void enviarSiConectado(String usuario, String payload) throws IOException {
 		WebSocketSession sesion = sesiones.get(usuario);
 		if (sesion != null && sesion.isOpen()) {
@@ -91,6 +95,7 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
 		}
 	}
 
+	// Saca el usuario de los atributos de la sesion (UsuarioHandshakeInterceptor los dejo ahi).
 	private String usuarioDe(WebSocketSession session) {
 		Object usuario = session.getAttributes().get(UsuarioHandshakeInterceptor.ATRIBUTO_USUARIO);
 		return usuario == null ? session.getId() : usuario.toString();
