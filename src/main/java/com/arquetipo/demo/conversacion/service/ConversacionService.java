@@ -13,11 +13,8 @@ import org.springframework.stereotype.Service;
 
 /**
  * Orquesta el envio de mensajes de texto entre dos usuarios: persiste cada mensaje en
- * MongoDB y expone el historial de una conversacion.
- *
- * <p>La entrega en tiempo real (a que sesiones de WebSocket abiertas hay que reenviar el
- * mensaje) no es responsabilidad de este servicio: la resuelve quien lo invoca
- * ({@code ChatWebSocketHandler}), que es quien conoce las sesiones conectadas.
+ * MongoDB, avisa a {@link NotificadorTiempoReal} (quien reenvia a las sesiones conectadas,
+ * sea por WebSocket o por gRPC) y expone el historial de una conversacion.
  */
 @Slf4j
 @Service
@@ -25,10 +22,13 @@ public class ConversacionService {
 
 	private final MensajeRepository repository;
 	private final MensajeMapper mapper;
+	private final NotificadorTiempoReal notificador;
 
-	public ConversacionService(MensajeRepository repository, MensajeMapper mapper) {
+	public ConversacionService(MensajeRepository repository, MensajeMapper mapper,
+			NotificadorTiempoReal notificador) {
 		this.repository = repository;
 		this.mapper = mapper;
+		this.notificador = notificador;
 	}
 
 	public MensajeResponse enviar(String remitente, MensajeEntrante entrante) {
@@ -40,7 +40,11 @@ public class ConversacionService {
 		Mensaje guardado = repository.save(mensaje);
 		log.debug("Mensaje guardado id={} remitente='{}' destinatario='{}'",
 				guardado.getId(), remitente, entrante.destinatario());
-		return mapper.toResponse(guardado);
+
+		MensajeResponse respuesta = mapper.toResponse(guardado);
+		notificador.notificar(remitente, respuesta);
+		notificador.notificar(entrante.destinatario(), respuesta);
+		return respuesta;
 	}
 
 	public PageResponse<MensajeResponse> historial(String usuarioA, String usuarioB, Pageable pageable) {
