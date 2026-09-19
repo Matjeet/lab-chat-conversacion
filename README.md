@@ -94,7 +94,35 @@ desarrollo). Para el endpoint REST del historial es una variable **distinta**:
 tiene CORS (no aplica, no es un protocolo de navegador): `GRPC_SERVER_ENABLED` (por defecto
 `true`) y `GRPC_SERVER_PORT` (por defecto `9091`) controlan su arranque.
 
-Tests: `./gradlew test` · Empaquetar: `./gradlew bootJar` · Docker: `docker build -t chat-conversacion .`
+Tests: `./gradlew test` · Empaquetar: `./gradlew bootJar`
+
+## Imagen de contenedor
+
+`Dockerfile` es multi-stage (build con `eclipse-temurin:25-jdk` + Gradle, runtime con
+`eclipse-temurin:25-jre`, corre como usuario no root) — funciona igual con Docker o con
+[Podman](https://podman.io/). Expone `8082` (HTTP: WebSocket + REST) y `9091` (gRPC).
+
+```bash
+podman build -t chat-conversacion .
+```
+
+Para correrla necesita llegar a una MongoDB — si esa Mongo corre en tu máquina (no en otro
+contenedor), `localhost` **dentro** del contenedor no es tu máquina: con Podman Machine
+(Windows/Mac) usa el host especial `host.containers.internal` (con Docker Desktop es
+`host.docker.internal`):
+
+```bash
+podman run -d --name chat-conversacion \
+  -p 8082:8082 -p 9091:9091 \
+  -e MONGODB_URI="mongodb://host.containers.internal:27017/chat_conversacion" \
+  chat-conversacion
+```
+
+Probado en caliente con Podman: build completo (incluida la generación de los stubs de gRPC
+via el plugin `com.google.protobuf`, que sí necesita red durante el build para bajar
+`protoc`/`protoc-gen-grpc-java`) + contenedor arrancando, conectando a la Mongo del host, y
+respondiendo tanto el REST (`/api/v1/conversaciones/...`) como el gRPC (`Historial`) con los
+mismos datos que ve la app corriendo fuera del contenedor.
 
 ## Contrato de errores
 
