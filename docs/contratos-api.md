@@ -5,7 +5,12 @@ Referencia de lo que expone el microservicio **chat-conversacion**: un canal de
 **REST** para leer el historial de una conversación. Pensada para que un cliente (frontend
 web, app móvil, otro servicio) los consuma sin leer el código.
 
-- Swagger UI (solo documenta el endpoint REST, no el WebSocket): `http://<host>:8082/swagger-ui.html`
+> También existe un tercer protocolo, **gRPC** (`Chat` + `Historial`, mismo dominio y misma
+> persistencia) pensado para consumo entre servicios — ver
+> [`contrato-grpc-conversacion.md`](contrato-grpc-conversacion.md). Si tu cliente es un
+> navegador, este documento (WebSocket + REST) es el que necesitas.
+
+- Swagger UI (solo documenta el endpoint REST, no el WebSocket ni el gRPC): `http://<host>:8082/swagger-ui.html`
 - OpenAPI JSON: `http://<host>:8082/v3/api-docs`
 
 ---
@@ -116,6 +121,9 @@ Reglas de entrega:
 - Si el destinatario **no** tiene una conexión abierta en este momento, simplemente no recibe
   nada — el mensaje no se pierde (queda en MongoDB, disponible por el historial de §3), pero
   no hay push ni notificación de "mensaje pendiente" todavía.
+- **La entrega cruza protocolos**: si el destinatario está conectado por el `rpc Chat` de gRPC
+  en vez de por WebSocket (o viceversa), le llega igual — ver
+  [`contrato-grpc-conversacion.md`](contrato-grpc-conversacion.md) §3 y §5.
 - El registro de conexiones abiertas es en memoria, por instancia del servicio. Con más de una
   instancia corriendo, dos usuarios conectados a instancias distintas no se ven en tiempo
   real (aunque el mensaje sí queda guardado). No hay balanceo/sticky-sessions resuelto para
@@ -318,18 +326,22 @@ export interface ProblemDetail {
 
 ## 7. Cómo funciona por dentro (para quien depure un mensaje que no llega)
 
-`ChatWebSocketHandler` (`com.arquetipo.demo.conversacion.web`) es el único punto de entrada:
+`ChatWebSocketHandler` (`com.arquetipo.demo.conversacion.web`) es el punto de entrada del
+WebSocket (el de gRPC es `ConversacionGrpcController`, ver
+[`contrato-grpc-conversacion.md`](contrato-grpc-conversacion.md) §5 — ambos comparten el mismo
+flujo de aquí en adelante):
 
 1. Al conectar, `UsuarioHandshakeInterceptor` saca `{usuario}` de la URL y lo deja en los
-   atributos de la sesión; el *handler* guarda la sesión en un mapa en memoria
-   `usuario → sesión`.
+   atributos de la sesión; el *handler* se suscribe a `NotificadorTiempoReal` con ese usuario
+   (un registro compartido con gRPC — es lo que hace posible la entrega cruzada de §2.3).
 2. Al llegar un *frame* de texto: lo parsea a `MensajeEntrante`, lo valida (Bean Validation) y,
    si es válido, llama a `ConversacionService.enviar(remitente, entrante)`.
-3. `ConversacionService` crea el documento `Mensaje` y lo guarda en MongoDB
-   (`MensajeRepository`, colección `mensajes`) — `enviadoEn` lo pone el propio MongoDB al
-   guardar (`@CreatedDate` + `MongoAuditingConfig`).
-4. El *handler* recibe el `MensajeResponse` ya guardado y lo manda por las sesiones abiertas
-   de `remitente` y `destinatario` (si las hay).
+3. `ConversacionService` crea el documento `Mensaje`, lo guarda en MongoDB
+   (`MensajeRepository`, colección `mensajes` — `enviadoEn` lo pone el propio MongoDB al
+   guardar, `@CreatedDate` + `MongoAuditingConfig`) y notifica a `NotificadorTiempoReal` con el
+   `MensajeResponse` ya guardado, tanto para el `remitente` como para el `destinatario`.
+4. `NotificadorTiempoReal` reenvía a quien esté suscrito con ese usuario — sea el `handler` de
+   WebSocket (manda un *frame*) o el controlador de gRPC (manda por el stream).
 
 El historial (§3) usa la misma colección: `MensajeRepository.findConversacion` busca por
 `remitente`/`destinatario` en ambos sentidos, recibe un `Pageable` (Spring Data lo arma a
@@ -359,7 +371,8 @@ equivalente para el WebSocket.
 
 | Fecha | Cambio |
 |---|---|
-| 2026-09-18 | Se habilita CORS en `ConversacionController` (`CORS_ALLOWED_ORIGINS` / `CORS_ALLOW_CREDENTIALS`, por defecto `http://localhost:3000`). Es una configuración aparte de `WEBSOCKET_ALLOWED_ORIGINS`. |
+| 2026-09-18 | Se agrega un tercer protocolo, gRPC (`ConversacionGrpcService/Chat` + `/Historial`, puerto `9091`) — ver [`contrato-grpc-conversacion.md`](contrato-grpc-conversacion.md). La entrega en tiempo real ahora cruza protocolos (§2.3, §7): `NotificadorTiempoReal` reemplaza el mapa de sesiones que tenía solo `ChatWebSocketHandler`. Tambien se corrige `UsuarioHandshakeInterceptor` para devolver `400` explícito al rechazar un `{usuario}` invalido (antes devolvía `200` sin upgrade, y un cliente real se quedaba esperando en vez de recibir un rechazo limpio). |
+| 2026-09-18 (anterior) | Se habilita CORS en `ConversacionController` (`CORS_ALLOWED_ORIGINS` / `CORS_ALLOW_CREDENTIALS`, por defecto `http://localhost:3000`). Es una configuración aparte de `WEBSOCKET_ALLOWED_ORIGINS`. |
 | 2026-09-17 | `GET /api/v1/conversaciones/{usuarioA}/{usuarioB}` pasa a devolver una página (`PageResponse`) en vez del array completo — query params `page`/`size`/`sort`, por defecto `size=20`, ordenado por `enviadoEn` ascendente. |
 | 2026-09-17 (anterior) | Se decide que `{usuario}`/`destinatario` es el `username` de chat-registro; se valida su formato (3–50, `A–Z a–z 0–9 . _ -`) en el *handshake* del WebSocket y en `MensajeEntrante.destinatario`. La identidad real sigue sin verificarse (pendiente). |
 | 2026-09-15 | Versión inicial: WebSocket `/ws/chat/{usuario}` y `GET /api/v1/conversaciones/{usuarioA}/{usuarioB}`. |

@@ -1,0 +1,6 @@
+# Configuracion exclusiva de tests.
+grpc:
+  server:
+    # Sin esto, cada @SpringBootTest intentaria bindear el mismo puerto TCP (competirian entre
+    # si). Los tests del controller gRPC arrancan su propio servidor in-process (grpc-testing).
+    enabled: false

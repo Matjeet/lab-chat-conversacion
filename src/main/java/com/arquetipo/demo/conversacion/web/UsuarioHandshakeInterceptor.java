@@ -2,6 +2,7 @@ package com.arquetipo.demo.conversacion.web;
 
 import java.util.Map;
 import java.util.regex.Pattern;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.server.ServerHttpRequest;
 import org.springframework.http.server.ServerHttpResponse;
 import org.springframework.web.socket.WebSocketHandler;
@@ -32,6 +33,9 @@ public class UsuarioHandshakeInterceptor implements HandshakeInterceptor {
 		String path = request.getURI().getPath();
 		String usuario = path.substring(path.lastIndexOf('/') + 1);
 		if (!FORMATO_USERNAME.matcher(usuario).matches()) {
+			// Sin esto, Spring responde 200 OK sin upgrade (ni error explicito ni Sec-WebSocket-
+			// Accept): un cliente real se queda esperando, no lo trata como un rechazo limpio.
+			response.setStatusCode(HttpStatus.BAD_REQUEST);
 			return false;
 		}
 		attributes.put(ATRIBUTO_USUARIO, usuario);
