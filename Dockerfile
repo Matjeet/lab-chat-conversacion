@@ -21,6 +21,7 @@ RUN groupadd --system app && useradd --system --gid app app
 COPY --from=build /workspace/build/libs/*.jar app.jar
 USER app
 
-EXPOSE 8082
+# 8082: HTTP (WebSocket + REST). 9091: gRPC (ConversacionGrpcService).
+EXPOSE 8082 9091
 ENV JAVA_OPTS=""
 ENTRYPOINT ["sh", "-c", "java $JAVA_OPTS -jar /app/app.jar"]
