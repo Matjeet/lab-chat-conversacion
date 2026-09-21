@@ -2,14 +2,17 @@ package com.arquetipo.demo.conversacion.grpc;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.arquetipo.demo.common.exception.ValidationException;
 import com.arquetipo.demo.conversacion.service.ConversacionService;
 import com.arquetipo.demo.conversacion.service.NotificadorTiempoReal;
+import com.arquetipo.demo.conversacion.web.dto.CursorPage;
 import com.arquetipo.demo.conversacion.web.dto.MensajeEntrante;
 import com.arquetipo.demo.conversacion.web.dto.MensajeResponse;
 import com.arquetipo.demo.conversacion.web.dto.PageResponse;
@@ -93,6 +96,38 @@ class ConversacionGrpcControllerTest {
 	}
 
 	@Test
+	void listaChats_delegaEnElServicioYMapeaLaPagina() {
+		MensajeResponse ultimoMensaje = new MensajeResponse(
+				"1", "mateo", "ana", "hola", Instant.parse("2026-09-18T20:00:00Z"));
+		com.arquetipo.demo.conversacion.web.dto.ChatResumen resumen =
+				new com.arquetipo.demo.conversacion.web.dto.ChatResumen("ana", ultimoMensaje);
+		CursorPage<com.arquetipo.demo.conversacion.web.dto.ChatResumen> pagina =
+				new CursorPage<>(List.of(resumen), "cursor-siguiente", true);
+		when(service.listaChats(eq("mateo"), eq(""), anyInt())).thenReturn(pagina);
+
+		ListaChatsResponse respuesta = stubBloqueante.listaChats(ListaChatsRequest.newBuilder()
+				.setUsuario("mateo")
+				.build());
+
+		assertThat(respuesta.getContentCount()).isEqualTo(1);
+		assertThat(respuesta.getContent(0).getOtroUsuario()).isEqualTo("ana");
+		assertThat(respuesta.getContent(0).getUltimoMensaje().getContenido()).isEqualTo("hola");
+		assertThat(respuesta.getNextCursor()).isEqualTo("cursor-siguiente");
+		assertThat(respuesta.getHasMore()).isTrue();
+	}
+
+	@Test
+	void listaChats_conCursorInvalido_devuelveInvalidArgument() {
+		when(service.listaChats(eq("mateo"), eq("cursor-invalido"), anyInt()))
+				.thenThrow(new ValidationException("El cursor de paginacion no es valido"));
+
+		StatusRuntimeException excepcion = catchStatusRuntimeException(() -> stubBloqueante.listaChats(
+				ListaChatsRequest.newBuilder().setUsuario("mateo").setCursor("cursor-invalido").build()));
+
+		assertThat(excepcion.getStatus().getCode()).isEqualTo(Status.Code.INVALID_ARGUMENT);
+	}
+
+	@Test
 	void chat_sinCabeceraUsuario_rechazaLaConexionConInvalidArgument() throws InterruptedException {
 		AtomicReference<Throwable> errorRecibido = new AtomicReference<>();
 		CountDownLatch cerrado = new CountDownLatch(1);
@@ -147,6 +182,15 @@ class ConversacionGrpcControllerTest {
 		Metadata cabeceras = new Metadata();
 		cabeceras.put(UsuarioMetadataInterceptor.USUARIO_METADATA_KEY, usuario);
 		return stubAsincrono.withInterceptors(MetadataUtils.newAttachHeadersInterceptor(cabeceras));
+	}
+
+	private static StatusRuntimeException catchStatusRuntimeException(Runnable llamada) {
+		try {
+			llamada.run();
+		} catch (StatusRuntimeException ex) {
+			return ex;
+		}
+		throw new AssertionError("Se esperaba un StatusRuntimeException y no se lanzo ninguno");
 	}
 
 	private static StreamObserver<MensajeEntregado> observadorVacio() {
