@@ -32,6 +32,7 @@ public class ConversacionService {
 	}
 
 	public MensajeResponse enviar(String remitente, MensajeEntrante entrante) {
+		log.debug(">> enviar(remitente='{}', destinatario='{}')", remitente, entrante.destinatario());
 		Mensaje mensaje = new Mensaje();
 		mensaje.setRemitente(remitente);
 		mensaje.setDestinatario(entrante.destinatario());
@@ -44,12 +45,16 @@ public class ConversacionService {
 		MensajeResponse respuesta = mapper.toResponse(guardado);
 		notificador.notificar(remitente, respuesta);
 		notificador.notificar(entrante.destinatario(), respuesta);
+		log.debug("<< enviar() -> OK, id={}", respuesta.id());
 		return respuesta;
 	}
 
 	public PageResponse<MensajeResponse> historial(String usuarioA, String usuarioB, Pageable pageable) {
+		log.debug(">> historial(usuarioA='{}', usuarioB='{}')", usuarioA, usuarioB);
 		Page<MensajeResponse> pagina = repository.findConversacion(usuarioA, usuarioB, pageable)
 				.map(mapper::toResponse);
-		return PageResponse.from(pagina);
+		PageResponse<MensajeResponse> respuesta = PageResponse.from(pagina);
+		log.debug("<< historial() -> OK, totalElements={}", respuesta.totalElements());
+		return respuesta;
 	}
 }

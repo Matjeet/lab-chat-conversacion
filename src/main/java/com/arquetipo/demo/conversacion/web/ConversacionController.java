@@ -5,6 +5,7 @@ import com.arquetipo.demo.conversacion.web.dto.MensajeResponse;
 import com.arquetipo.demo.conversacion.web.dto.PageResponse;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import lombok.extern.slf4j.Slf4j;
 import org.springdoc.core.annotations.ParameterObject;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
@@ -24,6 +25,7 @@ import org.springframework.web.bind.annotation.RestController;
  * {@code chat-registro}); no aplica al WebSocket, que tiene su propia variable
  * {@code WEBSOCKET_ALLOWED_ORIGINS} (ver {@link ChatWebSocketConfig}).
  */
+@Slf4j
 @Tag(name = "Conversaciones", description = "Historial de mensajes de una conversacion 1 a 1")
 @RestController
 @RequestMapping("/api/v1/conversaciones")
@@ -47,6 +49,9 @@ public class ConversacionController {
 			@ParameterObject
 			@PageableDefault(size = 20, sort = "enviadoEn", direction = Sort.Direction.ASC)
 			Pageable pageable) {
-		return service.historial(usuarioA, usuarioB, pageable);
+		log.debug(">> historial(usuarioA='{}', usuarioB='{}')", usuarioA, usuarioB);
+		PageResponse<MensajeResponse> respuesta = service.historial(usuarioA, usuarioB, pageable);
+		log.debug("<< historial() -> OK, totalElements={}", respuesta.totalElements());
+		return respuesta;
 	}
 }

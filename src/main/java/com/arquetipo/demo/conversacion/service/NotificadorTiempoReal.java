@@ -38,8 +38,10 @@ public class NotificadorTiempoReal {
 	}
 
 	public void notificar(String usuario, MensajeResponse mensaje) {
+		log.debug(">> notificar(usuario='{}')", usuario);
 		Set<Consumer<MensajeResponse>> receptores = suscriptores.get(usuario);
 		if (receptores == null) {
+			log.debug("<< notificar() -> OK (sin receptores conectados)");
 			return;
 		}
 		for (Consumer<MensajeResponse> receptor : receptores) {
@@ -50,5 +52,6 @@ public class NotificadorTiempoReal {
 						usuario, ex);
 			}
 		}
+		log.debug("<< notificar() -> OK, receptores={}", receptores.size());
 	}
 }

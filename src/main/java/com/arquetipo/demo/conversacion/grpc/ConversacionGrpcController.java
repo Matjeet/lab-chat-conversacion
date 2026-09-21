@@ -87,13 +87,16 @@ public class ConversacionGrpcController extends ConversacionGrpcServiceGrpc.Conv
 
 	@Override
 	public void historial(HistorialRequest request, StreamObserver<HistorialResponse> responseObserver) {
+		log.debug(">> historial(usuarioA='{}', usuarioB='{}')", request.getUsuarioA(), request.getUsuarioB());
 		try {
 			PageResponse<MensajeResponse> pagina = service.historial(
 					request.getUsuarioA(), request.getUsuarioB(), mapper.aPageable(request));
 			responseObserver.onNext(mapper.aHistorialResponse(pagina));
 			responseObserver.onCompleted();
+			log.debug("<< historial() -> OK, totalElements={}", pagina.totalElements());
 		} catch (Exception ex) {
 			log.error("Excepcion no controlada en el endpoint gRPC de historial", ex);
+			log.debug("<< historial() -> INTERNAL");
 			responseObserver.onError(
 					Status.INTERNAL.withDescription(DETALLE_ERROR_INTERNO).asRuntimeException());
 		}
