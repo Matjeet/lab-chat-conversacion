@@ -1,8 +1,10 @@
 # Contrato gRPC — Chat (`chat-conversacion`)
 
 Referencia para que **otro servicio** consuma por gRPC el chat de `chat-conversacion`: envío
-y reenvío de mensajes en tiempo real (equivalente al WebSocket) y el historial paginado de una
-conversación (equivalente al REST), sin necesidad de leer el código de este repositorio.
+y reenvío de mensajes en tiempo real (equivalente al WebSocket), el historial paginado de una
+conversación (equivalente al REST) y la lista de chats de un usuario con su último mensaje
+(paginada por cursor, para scroll infinito), sin necesidad de leer el código de este
+repositorio.
 
 Este es un **tercer protocolo**, no un reemplazo: `chat-conversacion` sigue exponiendo el
 WebSocket (`/ws/chat/{usuario}`) y el REST del historial
@@ -28,7 +30,7 @@ La fuente de verdad ejecutable es el propio `.proto`:
 | Variable de entorno del servidor | `GRPC_SERVER_PORT` (por defecto `9091`); `GRPC_SERVER_ENABLED=false` apaga el servidor por completo |
 | Paquete proto | `com.arquetipo.demo.conversacion.grpc` |
 | Servicio | `ConversacionGrpcService` |
-| Métodos (rpc) | `Chat` — bidi streaming, equivalente al WebSocket. `Historial` — unario, equivalente al REST. |
+| Métodos (rpc) | `Chat` — bidi streaming, equivalente al WebSocket. `Historial` — unario, equivalente al REST. `ListaChats` — unario, lista de chats con el último mensaje de cada uno, paginada por cursor. |
 | Reflexión de servicio | Habilitada (`io.grpc:grpc-services`) — un cliente puede descubrir el contrato sin tener el `.proto`, ver §6 |
 | Autenticación | Ninguna real todavía — mismo aviso que el WebSocket (§2.1): `Chat` exige una cabecera `usuario` con **formato** válido, pero nada comprueba que quien la manda sea el dueño real de ese username. **No usar con datos reales hasta que se resuelva** (ver `CLAUDE.md`). |
 
@@ -51,6 +53,7 @@ option java_outer_classname = "ConversacionProto";
 service ConversacionGrpcService {
   rpc Chat (stream MensajeSaliente) returns (stream MensajeEntregado);
   rpc Historial (HistorialRequest) returns (HistorialResponse);
+  rpc ListaChats (ListaChatsRequest) returns (ListaChatsResponse);
 }
 
 message MensajeSaliente {
@@ -83,6 +86,23 @@ message HistorialResponse {
   bool first = 6;
   bool last = 7;
   bool empty = 8;
+}
+
+message ListaChatsRequest {
+  string usuario = 1;
+  string cursor = 2;
+  int32 size = 3;
+}
+
+message ChatResumen {
+  string otro_usuario = 1;
+  MensajeEntregado ultimo_mensaje = 2;
+}
+
+message ListaChatsResponse {
+  repeated ChatResumen content = 1;
+  string next_cursor = 2;
+  bool has_more = 3;
 }
 ```
 
@@ -211,7 +231,81 @@ grpcurl -plaintext -d '{
 
 ---
 
-## 5. Cómo funciona por dentro
+## 5. `rpc ListaChats` — lista de chats con el último mensaje, paginada por cursor
+
+Unario, sin streaming. **No tiene equivalente en REST ni en WebSocket todavía** — es el primer
+endpoint que solo existe por gRPC. Pensado para la pantalla de "conversaciones" de un cliente
+(lista de con quién ha hablado un usuario, con scroll infinito): un resumen por cada persona
+con la que `usuario` tiene al menos un mensaje (en cualquiera de los dos sentidos), con el
+último mensaje de esa conversación, ordenados por la fecha de ese último mensaje —
+**más reciente primero**. No exige la cabecera `usuario` de `Chat` (§3.1): igual que
+`Historial`, el usuario va en la propia petición.
+
+### 5.1 Por qué cursor y no página/offset
+
+`Historial` (§4) pagina por página/offset porque una conversación concreta es, en la práctica,
+de solo lectura hacia atrás en el tiempo mientras se pagina (los mensajes viejos no cambian de
+posición). La lista de chats es distinta: **el orden cambia con cada mensaje nuevo** — un chat
+que estaba en la página 3 puede saltar a la página 1 si le llega un mensaje mientras el cliente
+está paginando, y un offset por número de página se desincroniza (repite o salta chats). Un
+cursor evita esto: en vez de "dame la página N", pide "dame los que siguen después de este
+punto exacto" — estable aunque cambie el orden de lo que ya se pidió.
+
+### `ListaChatsRequest`
+
+| Campo | Tipo proto | Obligatorio | Reglas |
+|---|---|---|---|
+| `usuario` | `string` | sí | El usuario cuya lista de chats se pide. No se valida en formato (igual que `usuario_a`/`usuario_b` en `Historial`): un valor que no exista simplemente no tiene chats. |
+| `cursor` | `string` | no | El `next_cursor` de una respuesta anterior. Vacío (o ausente) = primera página. Un valor que no venga de un `next_cursor` real de este servicio devuelve `INVALID_ARGUMENT` — ver §7. |
+| `size` | `int32` | no | `0` (o ausente) usa el default del servidor (`20`); se recorta a `100` si se pide más — mismos límites que `Historial`. |
+
+> El cursor es **opaco a propósito**: no lo parsees ni lo construyas a mano en el cliente,
+> guárdalo tal cual llegó y mándalo de vuelta sin modificar para pedir la siguiente página.
+
+### `ListaChatsResponse`
+
+| Campo | Tipo proto | Descripción |
+|---|---|---|
+| `content` | `repeated ChatResumen` | Los chats de esta página, ordenados por `ultimo_mensaje.enviado_en` descendente. |
+| `next_cursor` | `string` | Cursor para pedir la siguiente página. **Vacío si `has_more` es `false`** — no lo mandes de vuelta en ese caso, no hay garantía de que siga siendo válido. |
+| `has_more` | `bool` | Si hay más chats después de esta página. |
+
+### `ChatResumen`
+
+| Campo | Tipo proto | Descripción |
+|---|---|---|
+| `otro_usuario` | `string` | La otra persona de la conversación (nunca `ListaChatsRequest.usuario`). |
+| `ultimo_mensaje` | `MensajeEntregado` | El mensaje más reciente entre ambos, en cualquiera de los dos sentidos (§3.3 para la forma de `MensajeEntregado`). |
+
+Si `usuario` no tiene ningún mensaje con nadie, la respuesta es `content: []`, `has_more:
+false` — no es un error.
+
+### 5.2 Ejemplo (Node.js) — recorrer todas las páginas
+
+```js
+let cursor = "";
+do {
+  const pagina = await new Promise((resolve, reject) =>
+    client.listaChats({ usuario: "mateo", cursor, size: 20 },
+        (err, resp) => err ? reject(err) : resolve(resp)));
+
+  for (const chat of pagina.content) {
+    console.log(chat.otroUsuario, "->", chat.ultimoMensaje.contenido);
+  }
+  cursor = pagina.hasMore ? pagina.nextCursor : null;
+} while (cursor);
+```
+
+### Ejemplo `grpcurl`
+
+```bash
+grpcurl -plaintext -d '{"usuario": "mateo", "size": 20}' \
+  localhost:9091 com.arquetipo.demo.conversacion.grpc.ConversacionGrpcService/ListaChats
+```
+
+---
+
+## 6. Cómo funciona por dentro
 
 `ConversacionGrpcController` (`com.arquetipo.demo.conversacion.grpc`) no reimplementa ninguna
 lógica: traduce los mensajes proto a los mismos DTO que usan el WebSocket y el REST
@@ -229,11 +323,23 @@ por qué transporte está conectado cada uno.
 `UsuarioMetadataInterceptor` (`com.arquetipo.demo.conversacion.grpc`) es el equivalente gRPC
 de `UsuarioHandshakeInterceptor` (el que identifica al WebSocket): se registra a nivel de
 servidor (`GrpcServerLifecycle`, `common/grpc`) y solo actúa sobre el método `Chat` — deja
-pasar `Historial` sin exigir la cabecera.
+pasar `Historial` y `ListaChats` sin exigir la cabecera.
+
+`ListaChats` no usa `MensajeRepository.findConversacion` (el de `Historial`): tiene su propia
+consulta, `MensajeRepositoryCustom.listaChats` (implementada a mano sobre `MongoTemplate` en
+`MensajeRepositoryImpl`, porque agrupar por "la otra persona de la conversación" y quedarse
+con el más reciente de cada grupo no encaja en un `@Query` de una sola línea). La agregación:
+filtra los mensajes donde participa `usuario`, calcula quién es la otra persona de cada uno,
+ordena por fecha, agrupa por esa otra persona quedándose con el más reciente
+(`$group` + `$first`), y aplica el cursor como un filtro adicional después de ordenar los
+grupos. `ChatCursor` (`com.arquetipo.demo.conversacion.service`) es quien codifica/decodifica
+el cursor opaco de §5 — un cursor con formato inválido hace que `decodificar` lance, que el
+servicio traduce a `ValidationException`, que el controlador traduce a `INVALID_ARGUMENT`
+(ver §7).
 
 ---
 
-## 6. Errores
+## 7. Errores
 
 gRPC no tiene *Problem Details*: los errores llegan como `StatusRuntimeException` con un
 `Status.Code` y una `description` de texto libre.
@@ -242,7 +348,8 @@ gRPC no tiene *Problem Details*: los errores llegan como `StatusRuntimeException
 |---|---|---|---|
 | Cabecera `usuario` ausente o con formato inválido | `Chat` | `INVALID_ARGUMENT` | `"Cabecera de metadata 'usuario' ausente o con formato invalido (username de chat-registro: 3-50 caracteres, solo A-Z a-z 0-9 . _ -)"` |
 | `destinatario`/`contenido` inválidos en un `MensajeSaliente` | `Chat` | *(ninguno)* | El mensaje se descarta en silencio (§3.2) — no hay error por el stream, el stream sigue abierto. |
-| Cualquier fallo inesperado (MongoDB no disponible, bug interno) | `Historial` | `INTERNAL` | Mensaje genérico fijo: `"Ocurrio un error inesperado. Contacte con soporte."` — el detalle real queda en el log del servidor. |
+| `cursor` con formato inválido (no viene de un `next_cursor` real) | `ListaChats` | `INVALID_ARGUMENT` | `"El cursor de paginacion no es valido"` |
+| Cualquier fallo inesperado (MongoDB no disponible, bug interno) | `Historial`, `ListaChats` | `INTERNAL` | Mensaje genérico fijo: `"Ocurrio un error inesperado. Contacte con soporte."` — el detalle real queda en el log del servidor. |
 | Cualquier fallo inesperado al procesar un `MensajeSaliente` | `Chat` | *(ninguno)* | Se registra en el log del servidor; el stream sigue abierto, ese mensaje concreto simplemente no se persiste ni se reenvía. |
 
 Notas:
@@ -256,12 +363,13 @@ Notas:
 
 ---
 
-## 7. Generar el stub del cliente
+## 8. Generar el stub del cliente
 
 Si tu proyecto usa Gradle con el plugin `com.google.protobuf` (igual que este repo), copia
 `conversacion.proto` a tu `src/main/proto/` y añade las dependencias `io.grpc:grpc-stub` +
-`io.grpc:grpc-protobuf` — el plugin genera `ConversacionGrpcServiceGrpc`,
-`MensajeSaliente`/`MensajeEntregado`/`HistorialRequest`/`HistorialResponse` automáticamente.
+`io.grpc:grpc-protobuf` — el plugin genera `ConversacionGrpcServiceGrpc` y todos los mensajes
+(`MensajeSaliente`/`MensajeEntregado`/`HistorialRequest`/`HistorialResponse`/
+`ListaChatsRequest`/`ListaChatsResponse`/`ChatResumen`) automáticamente.
 Para otros lenguajes (Go, Python, Node...), el mismo `.proto` es válido tal cual con el
 `protoc`/plugin de cada uno.
 
@@ -273,8 +381,9 @@ pueden listar servicios y construir la petición sin el archivo, apuntando solo 
 
 ---
 
-## 8. Control de versiones de este documento
+## 9. Control de versiones de este documento
 
 | Fecha | Cambio |
 |---|---|
+| 2026-09-20 | Se agrega `ConversacionGrpcService/ListaChats`: lista de chats de un usuario con el último mensaje de cada uno, paginada por cursor (pensada para scroll infinito). Primer endpoint sin equivalente en REST/WebSocket. |
 | 2026-09-18 | Versión inicial: `ConversacionGrpcService/Chat` (bidi streaming, espejo del WebSocket) y `ConversacionGrpcService/Historial` (unario, espejo del REST paginado). Se documenta la entrega cruzada entre WebSocket y gRPC via `NotificadorTiempoReal`. |

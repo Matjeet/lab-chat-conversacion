@@ -1,7 +1,9 @@
 package com.arquetipo.demo.conversacion.grpc;
 
+import com.arquetipo.demo.common.exception.ValidationException;
 import com.arquetipo.demo.conversacion.service.ConversacionService;
 import com.arquetipo.demo.conversacion.service.NotificadorTiempoReal;
+import com.arquetipo.demo.conversacion.web.dto.CursorPage;
 import com.arquetipo.demo.conversacion.web.dto.MensajeEntrante;
 import com.arquetipo.demo.conversacion.web.dto.MensajeResponse;
 import com.arquetipo.demo.conversacion.web.dto.PageResponse;
@@ -97,6 +99,28 @@ public class ConversacionGrpcController extends ConversacionGrpcServiceGrpc.Conv
 		} catch (Exception ex) {
 			log.error("Excepcion no controlada en el endpoint gRPC de historial", ex);
 			log.debug("<< historial() -> INTERNAL");
+			responseObserver.onError(
+					Status.INTERNAL.withDescription(DETALLE_ERROR_INTERNO).asRuntimeException());
+		}
+	}
+
+	@Override
+	public void listaChats(ListaChatsRequest request, StreamObserver<ListaChatsResponse> responseObserver) {
+		log.debug(">> listaChats(usuario='{}')", request.getUsuario());
+		try {
+			CursorPage<com.arquetipo.demo.conversacion.web.dto.ChatResumen> pagina = service.listaChats(
+					request.getUsuario(), request.getCursor(), mapper.aTamanoLista(request));
+			responseObserver.onNext(mapper.aListaChatsResponse(pagina));
+			responseObserver.onCompleted();
+			log.debug("<< listaChats() -> OK, chats={}, hasMore={}", pagina.content().size(), pagina.hasMore());
+		} catch (ValidationException ex) {
+			log.warn("Cursor de ListaChats invalido. usuario='{}'", request.getUsuario());
+			log.debug("<< listaChats() -> INVALID_ARGUMENT");
+			responseObserver.onError(Status.INVALID_ARGUMENT.withDescription(ex.getMessage()).asRuntimeException());
+		} catch (Exception ex) {
+			log.error("Excepcion no controlada en el endpoint gRPC de lista de chats. usuario='{}'",
+					request.getUsuario(), ex);
+			log.debug("<< listaChats() -> INTERNAL");
 			responseObserver.onError(
 					Status.INTERNAL.withDescription(DETALLE_ERROR_INTERNO).asRuntimeException());
 		}

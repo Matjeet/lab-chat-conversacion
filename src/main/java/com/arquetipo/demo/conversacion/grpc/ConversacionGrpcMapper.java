@@ -1,5 +1,6 @@
 package com.arquetipo.demo.conversacion.grpc;
 
+import com.arquetipo.demo.conversacion.web.dto.CursorPage;
 import com.arquetipo.demo.conversacion.web.dto.MensajeEntrante;
 import com.arquetipo.demo.conversacion.web.dto.MensajeResponse;
 import com.arquetipo.demo.conversacion.web.dto.PageResponse;
@@ -35,11 +36,12 @@ public class ConversacionGrpcMapper {
 	}
 
 	Pageable aPageable(HistorialRequest request) {
-		int size = request.getSize() <= 0
-				? TAMANO_PAGINA_DEFECTO
-				: Math.min(request.getSize(), TAMANO_PAGINA_MAXIMO);
 		int page = Math.max(request.getPage(), 0);
-		return PageRequest.of(page, size, aSort(request.getSort()));
+		return PageRequest.of(page, tamanoPagina(request.getSize()), aSort(request.getSort()));
+	}
+
+	private static int tamanoPagina(int size) {
+		return size <= 0 ? TAMANO_PAGINA_DEFECTO : Math.min(size, TAMANO_PAGINA_MAXIMO);
 	}
 
 	private Sort aSort(String valor) {
@@ -64,6 +66,24 @@ public class ConversacionGrpcMapper {
 				.setLast(pagina.last())
 				.setEmpty(pagina.empty());
 		pagina.content().forEach(mensaje -> builder.addContent(aMensajeEntregado(mensaje)));
+		return builder.build();
+	}
+
+	int aTamanoLista(ListaChatsRequest request) {
+		return tamanoPagina(request.getSize());
+	}
+
+	// El parametro es el DTO (com.arquetipo.demo.conversacion.web.dto.ChatResumen), calificado
+	// del todo porque su nombre simple choca con el mensaje proto ChatResumen, en este mismo
+	// paquete (conversacion.grpc) por ser el generado del .proto.
+	ListaChatsResponse aListaChatsResponse(CursorPage<com.arquetipo.demo.conversacion.web.dto.ChatResumen> pagina) {
+		ListaChatsResponse.Builder builder = ListaChatsResponse.newBuilder()
+				.setNextCursor(pagina.nextCursor())
+				.setHasMore(pagina.hasMore());
+		pagina.content().forEach(chatResumen -> builder.addContent(ChatResumen.newBuilder()
+				.setOtroUsuario(chatResumen.otroUsuario())
+				.setUltimoMensaje(aMensajeEntregado(chatResumen.ultimoMensaje()))
+				.build()));
 		return builder.build();
 	}
 }
