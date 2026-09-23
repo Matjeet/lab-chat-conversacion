@@ -2,6 +2,7 @@ package com.arquetipo.demo.common.web;
 
 import com.arquetipo.demo.common.exception.DuplicateResourceException;
 import com.arquetipo.demo.common.exception.ResourceNotFoundException;
+import com.arquetipo.demo.common.exception.ValidationException;
 import java.net.URI;
 import java.time.Instant;
 import java.util.List;
@@ -38,6 +39,11 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
 	@ExceptionHandler(DuplicateResourceException.class)
 	public ProblemDetail handleDuplicate(DuplicateResourceException ex) {
 		return problem(HttpStatus.CONFLICT, "Recurso duplicado", ex.getMessage(), "duplicate-resource");
+	}
+
+	@ExceptionHandler(ValidationException.class)
+	public ProblemDetail handleValidation(ValidationException ex) {
+		return problem(HttpStatus.BAD_REQUEST, "Datos invalidos", ex.getMessage(), "validation-error");
 	}
 
 	@ExceptionHandler(DataIntegrityViolationException.class)

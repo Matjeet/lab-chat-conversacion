@@ -8,8 +8,9 @@ import org.springframework.data.mongodb.repository.Query;
 
 /**
  * Repositorio de {@link Mensaje}. Solo las consultas propias del dominio de conversacion.
+ * {@link MensajeRepositoryCustom} aporta las que no encajan en un {@code @Query} de una linea.
  */
-public interface MensajeRepository extends MongoRepository<Mensaje, String> {
+public interface MensajeRepository extends MongoRepository<Mensaje, String>, MensajeRepositoryCustom {
 
 	@Query("{ $or: [ { remitente: ?0, destinatario: ?1 }, { remitente: ?1, destinatario: ?0 } ] }")
 	Page<Mensaje> findConversacion(String usuarioA, String usuarioB, Pageable pageable);

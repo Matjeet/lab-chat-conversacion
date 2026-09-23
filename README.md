@@ -21,13 +21,16 @@ Paquete por feature bajo `com.arquetipo.demo`, mismo patrón que `chat-registro/
   `common/exception/`, `common/config/MongoAuditingConfig` (poblado automático de
   `enviadoEn`) y `common/grpc/` (arranca/detiene el servidor gRPC embebido, mismo patrón que
   `chat-registro` — genérico, no sabe nada del chat en sí).
-- `conversacion/` — la feature: `domain/Mensaje` (documento de MongoDB), `repository/`,
-  `mapper/`, `service/`:
-  - `ConversacionService` — persiste el mensaje y expone el historial; no conoce WebSocket ni
-    gRPC, solo notifica a `NotificadorTiempoReal` tras persistir.
+- `conversacion/` — la feature: `domain/Mensaje` (documento de MongoDB),
+  `repository/` (`MensajeRepository` + `MensajeRepositoryCustom`/`Impl`, esta última con la
+  agregación de Mongo de `listaChats`: agrupa por interlocutor y se queda con el mensaje más
+  reciente de cada uno), `mapper/`, `service/`:
+  - `ConversacionService` — persiste el mensaje, expone el historial y la lista de chats; no
+    conoce WebSocket ni gRPC, solo notifica a `NotificadorTiempoReal` tras persistir.
   - `NotificadorTiempoReal` — registro en memoria de "quién está conectado y por dónde
     avisarle", **compartido entre WebSocket y gRPC**: es lo que hace que un mensaje mandado
     por un protocolo se reenvíe a alguien conectado por el otro.
+  - `ChatCursor` — codifica/decodifica el cursor opaco de paginación de `listaChats`.
 
   y dos capas de transporte, ambas delgadas (delegan todo en lo de arriba):
   - `web/` (HTTP): `ChatWebSocketHandler` en `/ws/chat/{usuario}` + `UsuarioHandshakeInterceptor`
@@ -35,10 +38,12 @@ Paquete por feature bajo `com.arquetipo.demo`, mismo patrón que `chat-registro/
     `ConversacionController` — `GET /api/v1/conversaciones/{usuarioA}/{usuarioB}`, historial
     paginado (`page`/`size`/`sort`, ver `docs/contratos-api.md` §3). CORS habilitado ahí mismo
     (`@CrossOrigin`) via `CORS_ALLOWED_ORIGINS`.
-  - `grpc/` (puerto 9091): `ConversacionGrpcController` (`Chat` bidi streaming + `Historial`
-    unario) + `UsuarioMetadataInterceptor` (equivalente gRPC de `UsuarioHandshakeInterceptor`:
-    valida la cabecera de metadata `usuario` del stream `Chat`). Ver
-    `docs/contrato-grpc-conversacion.md`.
+  - `grpc/` (puerto 9091): `ConversacionGrpcController` (`Chat` bidi streaming, `Historial`
+    unario, y `ListaChats` unario — lista de chats con el último mensaje de cada uno, paginada
+    por **cursor** para scroll infinito, sin equivalente todavía en REST/WebSocket) +
+    `UsuarioMetadataInterceptor` (equivalente gRPC de `UsuarioHandshakeInterceptor`: valida la
+    cabecera de metadata `usuario` del stream `Chat`, no aplica a `Historial`/`ListaChats`).
+    Ver `docs/contrato-grpc-conversacion.md`.
 
 ## Stack
 
@@ -77,7 +82,7 @@ en `application.yml` se ignora en silencio y la app cae al default interno de Sp
 |---------|-----|
 | WebSocket del chat | ws://localhost:8082/ws/chat/{usuario} |
 | Historial de una conversación (paginado) | http://localhost:8082/api/v1/conversaciones/{usuarioA}/{usuarioB}?page=0&size=20 |
-| gRPC (`Chat` + `Historial`) | localhost:9091 — ver `docs/contrato-grpc-conversacion.md` |
+| gRPC (`Chat` + `Historial` + `ListaChats`) | localhost:9091 — ver `docs/contrato-grpc-conversacion.md` |
 | Swagger UI | http://localhost:8082/swagger-ui.html |
 | OpenAPI JSON | http://localhost:8082/v3/api-docs |
 | Actuator health | http://localhost:8082/actuator/health |
