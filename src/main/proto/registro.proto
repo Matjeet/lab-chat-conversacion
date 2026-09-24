@@ -1,0 +1,29 @@
+syntax = "proto3";
+
+package com.arquetipo.demo.registro.grpc;
+
+option java_multiple_files = true;
+option java_package = "com.arquetipo.demo.registro.grpc";
+option java_outer_classname = "RegistroProto";
+
+// Copia local, minima, del .proto de chat-registro (chat-registro/src/main/proto/registro.proto):
+// solo el rpc que este servicio necesita como cliente -- ExisteUsername, para validar que
+// solicitante/solicitado existan antes de crear una solicitud de chat (ver
+// com.arquetipo.demo.registro.grpc.RegistroGrpcClient). No es una referencia compartida: cada
+// repo de Proyectos/Chat tiene su propia copia independiente (ver CLAUDE.md, "Que es este
+// directorio"), asi que si chat-registro cambia el contrato de ExisteUsername hay que
+// actualizar esta copia a mano.
+service RegistroGrpcService {
+
+  // Solo dice si un username ya esta en uso (sin distinguir mayusculas). Consulta publica de
+  // disponibilidad, no revela nada mas del usuario.
+  rpc ExisteUsername (ExisteUsernameRequest) returns (ExisteUsernameResponse);
+}
+
+message ExisteUsernameRequest {
+  string username = 1;
+}
+
+message ExisteUsernameResponse {
+  bool existe = 1;
+}

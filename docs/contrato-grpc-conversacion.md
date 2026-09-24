@@ -2,8 +2,9 @@
 
 Referencia para que **otro servicio** consuma por gRPC el chat de `chat-conversacion`: envío
 y reenvío de mensajes en tiempo real (equivalente al WebSocket), el historial paginado de una
-conversación (equivalente al REST) y la lista de chats de un usuario con su último mensaje
-(paginada por cursor, para scroll infinito), sin necesidad de leer el código de este
+conversación (equivalente al REST), la lista de chats de un usuario con su último mensaje
+(paginada por cursor, para scroll infinito) y la creación de solicitudes de chat (paso previo
+obligatorio para poder chatear con alguien), sin necesidad de leer el código de este
 repositorio.
 
 Este es un **tercer protocolo**, no un reemplazo: `chat-conversacion` sigue exponiendo el
@@ -30,9 +31,9 @@ La fuente de verdad ejecutable es el propio `.proto`:
 | Variable de entorno del servidor | `GRPC_SERVER_PORT` (por defecto `9091`); `GRPC_SERVER_ENABLED=false` apaga el servidor por completo |
 | Paquete proto | `com.arquetipo.demo.conversacion.grpc` |
 | Servicio | `ConversacionGrpcService` |
-| Métodos (rpc) | `Chat` — bidi streaming, equivalente al WebSocket. `Historial` — unario, equivalente al REST. `ListaChats` — unario, lista de chats con el último mensaje de cada uno, paginada por cursor. |
-| Reflexión de servicio | Habilitada (`io.grpc:grpc-services`) — un cliente puede descubrir el contrato sin tener el `.proto`, ver §6 |
-| Autenticación | Ninguna real todavía — mismo aviso que el WebSocket (§2.1): `Chat` exige una cabecera `usuario` con **formato** válido, pero nada comprueba que quien la manda sea el dueño real de ese username. **No usar con datos reales hasta que se resuelva** (ver `CLAUDE.md`). |
+| Métodos (rpc) | `Chat` — bidi streaming, equivalente al WebSocket. `Historial` — unario, equivalente al REST. `ListaChats` — unario, lista de chats con el último mensaje de cada uno, paginada por cursor. `CrearSolicitud` — unario, crea una solicitud de chat. |
+| Reflexión de servicio | Habilitada (`io.grpc:grpc-services`) — un cliente puede descubrir el contrato sin tener el `.proto`, ver §7 |
+| Autenticación | Ninguna real todavía — mismo aviso que el WebSocket (§2.1): `Chat` exige una cabecera `usuario` con **formato** válido, pero nada comprueba que quien la manda sea el dueño real de ese username. `CrearSolicitud` sí valida que `solicitante`/`solicitado` **existan** en `chat-registro`, pero tampoco que quien llama sea el dueño de `solicitante`. **No usar con datos reales hasta que se resuelva** (ver `CLAUDE.md`). |
 
 > El puerto real por entorno lo define infraestructura. Pregunta al equipo de infraestructura
 > la dirección de tu entorno si no es `localhost:9091`.
@@ -54,6 +55,7 @@ service ConversacionGrpcService {
   rpc Chat (stream MensajeSaliente) returns (stream MensajeEntregado);
   rpc Historial (HistorialRequest) returns (HistorialResponse);
   rpc ListaChats (ListaChatsRequest) returns (ListaChatsResponse);
+  rpc CrearSolicitud (CrearSolicitudRequest) returns (SolicitudResponse);
 }
 
 message MensajeSaliente {
@@ -103,6 +105,19 @@ message ListaChatsResponse {
   repeated ChatResumen content = 1;
   string next_cursor = 2;
   bool has_more = 3;
+}
+
+message CrearSolicitudRequest {
+  string solicitante = 1;
+  string solicitado = 2;
+}
+
+message SolicitudResponse {
+  string id = 1;
+  string solicitante = 2;
+  string solicitado = 3;
+  bool aceptada = 4;
+  string creada_en = 5;
 }
 ```
 
@@ -160,7 +175,7 @@ Reglas de entrega (idénticas al WebSocket, §2.3 de `contratos-api.md`):
   *ack* separado).
 - **Cruza protocolos**: si el destinatario está conectado por WebSocket, le llega igual; si el
   remitente está en gRPC y el destinatario en WebSocket (o viceversa), la entrega funciona
-  igual — ver §5.
+  igual — ver §7.
 - Si el destinatario no tiene ninguna conexión abierta (por ningún protocolo), no recibe nada
   en tiempo real, pero el mensaje queda persistido — disponible por `Historial` (§4) o por el
   REST equivalente.
@@ -256,7 +271,7 @@ punto exacto" — estable aunque cambie el orden de lo que ya se pidió.
 | Campo | Tipo proto | Obligatorio | Reglas |
 |---|---|---|---|
 | `usuario` | `string` | sí | El usuario cuya lista de chats se pide. No se valida en formato (igual que `usuario_a`/`usuario_b` en `Historial`): un valor que no exista simplemente no tiene chats. |
-| `cursor` | `string` | no | El `next_cursor` de una respuesta anterior. Vacío (o ausente) = primera página. Un valor que no venga de un `next_cursor` real de este servicio devuelve `INVALID_ARGUMENT` — ver §7. |
+| `cursor` | `string` | no | El `next_cursor` de una respuesta anterior. Vacío (o ausente) = primera página. Un valor que no venga de un `next_cursor` real de este servicio devuelve `INVALID_ARGUMENT` — ver §8. |
 | `size` | `int32` | no | `0` (o ausente) usa el default del servidor (`20`); se recorta a `100` si se pide más — mismos límites que `Historial`. |
 
 > El cursor es **opaco a propósito**: no lo parsees ni lo construyas a mano en el cliente,
@@ -305,7 +320,88 @@ grpcurl -plaintext -d '{"usuario": "mateo", "size": 20}' \
 
 ---
 
-## 6. Cómo funciona por dentro
+## 6. `rpc CrearSolicitud` — crea una solicitud de chat
+
+Unario, sin streaming. **No tiene equivalente en REST ni en WebSocket todavía**. Antes de que
+dos usuarios puedan chatear hace falta una solicitud entre ellos — este rpc la crea. No exige
+la cabecera `usuario` de `Chat` (§3.1): igual que `Historial`/`ListaChats`, los dos usuarios
+van en la propia petición.
+
+A diferencia de `Historial`/`ListaChats`, aquí `solicitante`/`solicitado` **sí se validan**:
+
+1. **Formato** (Bean Validation, igual que `destinatario` en `MensajeSaliente`, §3.2): 3–50
+   caracteres, solo `A–Z a–z 0–9 . _ -`. Si no cumple, `INVALID_ARGUMENT`.
+2. **No pueden ser el mismo usuario** (sin distinguir mayúsculas). Si lo son,
+   `INVALID_ARGUMENT`.
+3. **Ambos deben existir en `chat-registro`** — `chat-conversacion` llama por gRPC al rpc
+   `ExisteUsername` de `chat-registro` (ver `CLAUDE.md`, variables `REGISTRO_GRPC_HOST`/
+   `REGISTRO_GRPC_PORT`). Si alguno no existe, `NOT_FOUND`. Si `chat-registro` no responde,
+   `UNAVAILABLE`.
+4. **No puede existir ya una solicitud entre ambos**, en cualquier sentido (da igual quién sea
+   `solicitante` y quién `solicitado` en la solicitud existente). Si ya existe,
+   `ALREADY_EXISTS`.
+
+Si las cuatro pasan, se persiste con `aceptada: false` (aceptar o rechazar una solicitud no
+está implementado todavía) y se publica una notificación en RabbitMQ (§6.3) — un fallo al
+publicar **no** hace fallar la petición: la solicitud ya quedó creada, la notificación es un
+aviso best-effort.
+
+### `CrearSolicitudRequest`
+
+| Campo | Tipo proto | Obligatorio | Reglas |
+|---|---|---|---|
+| `solicitante` | `string` | sí | Username (chat-registro) de quien inicia la solicitud. |
+| `solicitado` | `string` | sí | Username (chat-registro) de quien la recibe. Distinto de `solicitante`. |
+
+### `SolicitudResponse`
+
+| Campo | Tipo proto | Descripción |
+|---|---|---|
+| `id` | `string` | `ObjectId` de MongoDB en texto. |
+| `solicitante` | `string` | Quien la inició. |
+| `solicitado` | `string` | Quien la recibió. |
+| `aceptada` | `bool` | Nace siempre en `false` — no hay rpc todavía para aceptarla/rechazarla. |
+| `creada_en` | `string` | ISO-8601 UTC, mismo formato que `enviado_en` en `MensajeEntregado` (§3.3). |
+
+### 6.1 Ejemplo `grpcurl`
+
+```bash
+grpcurl -plaintext -d '{
+  "solicitante": "mateo",
+  "solicitado": "ana"
+}' localhost:9091 com.arquetipo.demo.conversacion.grpc.ConversacionGrpcService/CrearSolicitud
+```
+
+### 6.2 Ejemplo (Node.js)
+
+```js
+client.crearSolicitud({ solicitante: "mateo", solicitado: "ana" }, (err, resp) => {
+  if (err) {
+    console.error(err.code, err.details); // p. ej. ALREADY_EXISTS si ya existia
+    return;
+  }
+  console.log("Solicitud creada:", resp.id);
+});
+```
+
+### 6.3 Notificación por RabbitMQ
+
+Tras persistir, se publica un mensaje JSON en el exchange **topic** `chat.notificaciones`
+(configurable con `RABBITMQ_NOTIFICACIONES_EXCHANGE`), routing key `notificacion.solicitud`:
+
+```json
+{ "solicitante": "mateo", "solicitado": "ana", "tipo": "solicitud" }
+```
+
+`tipo` distingue el motivo de la notificación — hoy solo existe `"solicitud"`, pensado para
+admitir otros tipos en el futuro (p. ej. una solicitud aceptada) sin cambiar el contrato del
+mensaje ni el exchange. Un cliente interesado debe declarar su propia cola y enlazarla al
+exchange con la routing key que le interese (`notificacion.solicitud`, o `notificacion.#` para
+recibir cualquier tipo futuro) — `chat-conversacion` no declara ninguna cola, solo el exchange.
+
+---
+
+## 7. Cómo funciona por dentro
 
 `ConversacionGrpcController` (`com.arquetipo.demo.conversacion.grpc`) no reimplementa ninguna
 lógica: traduce los mensajes proto a los mismos DTO que usan el WebSocket y el REST
@@ -323,7 +419,7 @@ por qué transporte está conectado cada uno.
 `UsuarioMetadataInterceptor` (`com.arquetipo.demo.conversacion.grpc`) es el equivalente gRPC
 de `UsuarioHandshakeInterceptor` (el que identifica al WebSocket): se registra a nivel de
 servidor (`GrpcServerLifecycle`, `common/grpc`) y solo actúa sobre el método `Chat` — deja
-pasar `Historial` y `ListaChats` sin exigir la cabecera.
+pasar el resto de rpc sin exigir la cabecera.
 
 `ListaChats` no usa `MensajeRepository.findConversacion` (el de `Historial`): tiene su propia
 consulta, `MensajeRepositoryCustom.listaChats` (implementada a mano sobre `MongoTemplate` en
@@ -335,11 +431,22 @@ ordena por fecha, agrupa por esa otra persona quedándose con el más reciente
 grupos. `ChatCursor` (`com.arquetipo.demo.conversacion.service`) es quien codifica/decodifica
 el cursor opaco de §5 — un cursor con formato inválido hace que `decodificar` lance, que el
 servicio traduce a `ValidationException`, que el controlador traduce a `INVALID_ARGUMENT`
-(ver §7).
+(ver §8).
+
+`CrearSolicitud` delega en `SolicitudChatService` (`com.arquetipo.demo.conversacion.service`),
+que aplica las cuatro validaciones de §6 en orden y, si todas pasan, persiste con
+`SolicitudChatRepository` (`findEntreUsuarios` es el `@Query` que busca una solicitud
+existente entre dos usuarios en cualquier sentido) y notifica con `NotificadorAmqp`
+(`RabbitTemplate.convertAndSend`, exchange declarado en `RabbitMqConfig`,
+`common/config`). La existencia de usernames la resuelve `RegistroGrpcClient`
+(`com.arquetipo.demo.registro.grpc`) — cliente gRPC de `chat-registro`, con su propia copia
+local y mínima del `.proto` de ese servicio (solo `ExisteUsername`, ver
+`src/main/proto/registro.proto`), mismo patrón que usa `chat-gateway` para hablar con
+`chat-registro`.
 
 ---
 
-## 7. Errores
+## 8. Errores
 
 gRPC no tiene *Problem Details*: los errores llegan como `StatusRuntimeException` con un
 `Status.Code` y una `description` de texto libre.
@@ -349,8 +456,17 @@ gRPC no tiene *Problem Details*: los errores llegan como `StatusRuntimeException
 | Cabecera `usuario` ausente o con formato inválido | `Chat` | `INVALID_ARGUMENT` | `"Cabecera de metadata 'usuario' ausente o con formato invalido (username de chat-registro: 3-50 caracteres, solo A-Z a-z 0-9 . _ -)"` |
 | `destinatario`/`contenido` inválidos en un `MensajeSaliente` | `Chat` | *(ninguno)* | El mensaje se descarta en silencio (§3.2) — no hay error por el stream, el stream sigue abierto. |
 | `cursor` con formato inválido (no viene de un `next_cursor` real) | `ListaChats` | `INVALID_ARGUMENT` | `"El cursor de paginacion no es valido"` |
-| Cualquier fallo inesperado (MongoDB no disponible, bug interno) | `Historial`, `ListaChats` | `INTERNAL` | Mensaje genérico fijo: `"Ocurrio un error inesperado. Contacte con soporte."` — el detalle real queda en el log del servidor. |
+| `solicitante`/`solicitado` con formato inválido (Bean Validation) | `CrearSolicitud` | `INVALID_ARGUMENT` | `"El cuerpo de la peticion no supero la validacion -> <campo>: <mensaje>"` |
+| `solicitante` y `solicitado` son el mismo usuario | `CrearSolicitud` | `INVALID_ARGUMENT` | `"No se puede crear una solicitud de chat hacia uno mismo"` |
+| `solicitante`/`solicitado` no existe en `chat-registro` | `CrearSolicitud` | `NOT_FOUND` | `"No existe el usuario solicitante/solicitado '<username>'"` |
+| Ya existe una solicitud entre `solicitante` y `solicitado`, en cualquier sentido | `CrearSolicitud` | `ALREADY_EXISTS` | `"Ya existe una solicitud de chat entre '<a>' y '<b>'"` |
+| `chat-registro` no responde al validar `ExisteUsername` | `CrearSolicitud` | `UNAVAILABLE` | `"El servicio 'chat-registro' no esta disponible"` |
+| Cualquier fallo inesperado (MongoDB no disponible, bug interno) | `Historial`, `ListaChats`, `CrearSolicitud` | `INTERNAL` | Mensaje genérico fijo: `"Ocurrio un error inesperado. Contacte con soporte."` — el detalle real queda en el log del servidor. |
 | Cualquier fallo inesperado al procesar un `MensajeSaliente` | `Chat` | *(ninguno)* | Se registra en el log del servidor; el stream sigue abierto, ese mensaje concreto simplemente no se persiste ni se reenvía. |
+
+Nota sobre RabbitMQ: un fallo al publicar la notificación de `CrearSolicitud` (§6.3) **no**
+genera ningún código de error — la petición ya devolvió éxito porque la solicitud se persistió
+correctamente. El fallo solo se registra en el log del servidor (`NotificadorAmqp`).
 
 Notas:
 
@@ -363,13 +479,14 @@ Notas:
 
 ---
 
-## 8. Generar el stub del cliente
+## 9. Generar el stub del cliente
 
 Si tu proyecto usa Gradle con el plugin `com.google.protobuf` (igual que este repo), copia
 `conversacion.proto` a tu `src/main/proto/` y añade las dependencias `io.grpc:grpc-stub` +
 `io.grpc:grpc-protobuf` — el plugin genera `ConversacionGrpcServiceGrpc` y todos los mensajes
 (`MensajeSaliente`/`MensajeEntregado`/`HistorialRequest`/`HistorialResponse`/
-`ListaChatsRequest`/`ListaChatsResponse`/`ChatResumen`) automáticamente.
+`ListaChatsRequest`/`ListaChatsResponse`/`ChatResumen`/`CrearSolicitudRequest`/
+`SolicitudResponse`) automáticamente.
 Para otros lenguajes (Go, Python, Node...), el mismo `.proto` es válido tal cual con el
 `protoc`/plugin de cada uno.
 
@@ -381,9 +498,10 @@ pueden listar servicios y construir la petición sin el archivo, apuntando solo 
 
 ---
 
-## 9. Control de versiones de este documento
+## 10. Control de versiones de este documento
 
 | Fecha | Cambio |
 |---|---|
+| 2026-09-23 | Se agrega `ConversacionGrpcService/CrearSolicitud`: crea una solicitud de chat (paso previo obligatorio para poder chatear), valida `solicitante`/`solicitado` contra `chat-registro` por gRPC (`RegistroGrpcClient`) y notifica por RabbitMQ (exchange `chat.notificaciones`). Aceptar/rechazar la solicitud no está implementado todavía. |
 | 2026-09-20 | Se agrega `ConversacionGrpcService/ListaChats`: lista de chats de un usuario con el último mensaje de cada uno, paginada por cursor (pensada para scroll infinito). Primer endpoint sin equivalente en REST/WebSocket. |
 | 2026-09-18 | Versión inicial: `ConversacionGrpcService/Chat` (bidi streaming, espejo del WebSocket) y `ConversacionGrpcService/Historial` (unario, espejo del REST paginado). Se documenta la entrega cruzada entre WebSocket y gRPC via `NotificadorTiempoReal`. |

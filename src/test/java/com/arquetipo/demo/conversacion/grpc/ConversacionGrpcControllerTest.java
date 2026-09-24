@@ -9,13 +9,18 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.arquetipo.demo.common.exception.DuplicateResourceException;
+import com.arquetipo.demo.common.exception.ResourceNotFoundException;
+import com.arquetipo.demo.common.exception.ServiceUnavailableException;
 import com.arquetipo.demo.common.exception.ValidationException;
 import com.arquetipo.demo.conversacion.service.ConversacionService;
 import com.arquetipo.demo.conversacion.service.NotificadorTiempoReal;
+import com.arquetipo.demo.conversacion.service.SolicitudChatService;
 import com.arquetipo.demo.conversacion.web.dto.CursorPage;
 import com.arquetipo.demo.conversacion.web.dto.MensajeEntrante;
 import com.arquetipo.demo.conversacion.web.dto.MensajeResponse;
 import com.arquetipo.demo.conversacion.web.dto.PageResponse;
+import com.arquetipo.demo.conversacion.web.dto.SolicitudChatResponse;
 import io.grpc.ManagedChannel;
 import io.grpc.Metadata;
 import io.grpc.Server;
@@ -45,6 +50,7 @@ import org.junit.jupiter.api.Test;
 class ConversacionGrpcControllerTest {
 
 	private ConversacionService service;
+	private SolicitudChatService solicitudService;
 	private Server server;
 	private ManagedChannel channel;
 	private ConversacionGrpcServiceGrpc.ConversacionGrpcServiceBlockingStub stubBloqueante;
@@ -54,9 +60,10 @@ class ConversacionGrpcControllerTest {
 	void iniciarServidorInProcess() throws Exception {
 		String nombreServidor = "conversacion-grpc-test-" + System.nanoTime();
 		service = mock(ConversacionService.class);
+		solicitudService = mock(SolicitudChatService.class);
 		Validator validator = Validation.buildDefaultValidatorFactory().getValidator();
 		ConversacionGrpcController controller = new ConversacionGrpcController(
-				service, new NotificadorTiempoReal(), new ConversacionGrpcMapper(), validator);
+				service, new NotificadorTiempoReal(), solicitudService, new ConversacionGrpcMapper(), validator);
 
 		server = InProcessServerBuilder.forName(nombreServidor)
 				.directExecutor()
@@ -125,6 +132,64 @@ class ConversacionGrpcControllerTest {
 				ListaChatsRequest.newBuilder().setUsuario("mateo").setCursor("cursor-invalido").build()));
 
 		assertThat(excepcion.getStatus().getCode()).isEqualTo(Status.Code.INVALID_ARGUMENT);
+	}
+
+	@Test
+	void crearSolicitud_delegaEnElServicioYMapeaLaRespuesta() {
+		SolicitudChatResponse solicitud = new SolicitudChatResponse(
+				"1", "mateo", "ana", false, Instant.parse("2026-09-23T20:00:00Z"));
+		when(solicitudService.crear("mateo", "ana")).thenReturn(solicitud);
+
+		SolicitudResponse respuesta = stubBloqueante.crearSolicitud(CrearSolicitudRequest.newBuilder()
+				.setSolicitante("mateo")
+				.setSolicitado("ana")
+				.build());
+
+		assertThat(respuesta.getId()).isEqualTo("1");
+		assertThat(respuesta.getSolicitante()).isEqualTo("mateo");
+		assertThat(respuesta.getSolicitado()).isEqualTo("ana");
+		assertThat(respuesta.getAceptada()).isFalse();
+	}
+
+	@Test
+	void crearSolicitud_conUsernameInvalido_devuelveInvalidArgumentSinLlamarAlServicio() {
+		StatusRuntimeException excepcion = catchStatusRuntimeException(() -> stubBloqueante.crearSolicitud(
+				CrearSolicitudRequest.newBuilder().setSolicitante("ma").setSolicitado("ana").build()));
+
+		assertThat(excepcion.getStatus().getCode()).isEqualTo(Status.Code.INVALID_ARGUMENT);
+		verify(solicitudService, never()).crear(any(), any());
+	}
+
+	@Test
+	void crearSolicitud_conUsuarioInexistente_devuelveNotFound() {
+		when(solicitudService.crear("mateo", "fantasma"))
+				.thenThrow(new ResourceNotFoundException("No existe el usuario solicitado 'fantasma'"));
+
+		StatusRuntimeException excepcion = catchStatusRuntimeException(() -> stubBloqueante.crearSolicitud(
+				CrearSolicitudRequest.newBuilder().setSolicitante("mateo").setSolicitado("fantasma").build()));
+
+		assertThat(excepcion.getStatus().getCode()).isEqualTo(Status.Code.NOT_FOUND);
+	}
+
+	@Test
+	void crearSolicitud_conSolicitudDuplicada_devuelveAlreadyExists() {
+		when(solicitudService.crear("mateo", "ana"))
+				.thenThrow(new DuplicateResourceException("Ya existe una solicitud de chat entre 'mateo' y 'ana'"));
+
+		StatusRuntimeException excepcion = catchStatusRuntimeException(() -> stubBloqueante.crearSolicitud(
+				CrearSolicitudRequest.newBuilder().setSolicitante("mateo").setSolicitado("ana").build()));
+
+		assertThat(excepcion.getStatus().getCode()).isEqualTo(Status.Code.ALREADY_EXISTS);
+	}
+
+	@Test
+	void crearSolicitud_conChatRegistroCaido_devuelveUnavailable() {
+		when(solicitudService.crear("mateo", "ana")).thenThrow(new ServiceUnavailableException("chat-registro"));
+
+		StatusRuntimeException excepcion = catchStatusRuntimeException(() -> stubBloqueante.crearSolicitud(
+				CrearSolicitudRequest.newBuilder().setSolicitante("mateo").setSolicitado("ana").build()));
+
+		assertThat(excepcion.getStatus().getCode()).isEqualTo(Status.Code.UNAVAILABLE);
 	}
 
 	@Test

@@ -2,6 +2,7 @@ package com.arquetipo.demo.common.web;
 
 import com.arquetipo.demo.common.exception.DuplicateResourceException;
 import com.arquetipo.demo.common.exception.ResourceNotFoundException;
+import com.arquetipo.demo.common.exception.ServiceUnavailableException;
 import com.arquetipo.demo.common.exception.ValidationException;
 import java.net.URI;
 import java.time.Instant;
@@ -44,6 +45,13 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
 	@ExceptionHandler(ValidationException.class)
 	public ProblemDetail handleValidation(ValidationException ex) {
 		return problem(HttpStatus.BAD_REQUEST, "Datos invalidos", ex.getMessage(), "validation-error");
+	}
+
+	@ExceptionHandler(ServiceUnavailableException.class)
+	public ProblemDetail handleServiceUnavailable(ServiceUnavailableException ex) {
+		log.error(ex.getMessage());
+		return problem(HttpStatus.SERVICE_UNAVAILABLE, "Servicio no disponible", ex.getMessage(),
+				"service-unavailable");
 	}
 
 	@ExceptionHandler(DataIntegrityViolationException.class)

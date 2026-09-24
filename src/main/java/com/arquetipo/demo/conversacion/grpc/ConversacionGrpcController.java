@@ -1,18 +1,26 @@
 package com.arquetipo.demo.conversacion.grpc;
 
+import com.arquetipo.demo.common.exception.DuplicateResourceException;
+import com.arquetipo.demo.common.exception.ResourceNotFoundException;
+import com.arquetipo.demo.common.exception.ServiceUnavailableException;
 import com.arquetipo.demo.common.exception.ValidationException;
 import com.arquetipo.demo.conversacion.service.ConversacionService;
 import com.arquetipo.demo.conversacion.service.NotificadorTiempoReal;
+import com.arquetipo.demo.conversacion.service.SolicitudChatService;
 import com.arquetipo.demo.conversacion.web.dto.CursorPage;
 import com.arquetipo.demo.conversacion.web.dto.MensajeEntrante;
 import com.arquetipo.demo.conversacion.web.dto.MensajeResponse;
 import com.arquetipo.demo.conversacion.web.dto.PageResponse;
+import com.arquetipo.demo.conversacion.web.dto.SolicitudChatResponse;
+import com.arquetipo.demo.conversacion.web.dto.SolicitudEntrante;
 import io.grpc.Status;
+import io.grpc.StatusRuntimeException;
 import io.grpc.stub.StreamObserver;
 import jakarta.validation.ConstraintViolation;
 import jakarta.validation.Validator;
 import java.util.Set;
 import java.util.function.Consumer;
+import java.util.stream.Collectors;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
@@ -32,16 +40,19 @@ import org.springframework.stereotype.Component;
 public class ConversacionGrpcController extends ConversacionGrpcServiceGrpc.ConversacionGrpcServiceImplBase {
 
 	private static final String DETALLE_ERROR_INTERNO = "Ocurrio un error inesperado. Contacte con soporte.";
+	private static final String DETALLE_VALIDACION = "El cuerpo de la peticion no supero la validacion";
 
 	private final ConversacionService service;
 	private final NotificadorTiempoReal notificador;
+	private final SolicitudChatService solicitudService;
 	private final ConversacionGrpcMapper mapper;
 	private final Validator validator;
 
 	public ConversacionGrpcController(ConversacionService service, NotificadorTiempoReal notificador,
-			ConversacionGrpcMapper mapper, Validator validator) {
+			SolicitudChatService solicitudService, ConversacionGrpcMapper mapper, Validator validator) {
 		this.service = service;
 		this.notificador = notificador;
+		this.solicitudService = solicitudService;
 		this.mapper = mapper;
 		this.validator = validator;
 	}
@@ -124,5 +135,53 @@ public class ConversacionGrpcController extends ConversacionGrpcServiceGrpc.Conv
 			responseObserver.onError(
 					Status.INTERNAL.withDescription(DETALLE_ERROR_INTERNO).asRuntimeException());
 		}
+	}
+
+	@Override
+	public void crearSolicitud(CrearSolicitudRequest request, StreamObserver<SolicitudResponse> responseObserver) {
+		log.debug(">> crearSolicitud(solicitante='{}', solicitado='{}')",
+				request.getSolicitante(), request.getSolicitado());
+		SolicitudEntrante entrante = mapper.aSolicitudEntrante(request);
+
+		Set<ConstraintViolation<SolicitudEntrante>> violaciones = validator.validate(entrante);
+		if (!violaciones.isEmpty()) {
+			log.debug("<< crearSolicitud() -> INVALID_ARGUMENT ({} violacion(es))", violaciones.size());
+			responseObserver.onError(errorDeValidacion(violaciones));
+			return;
+		}
+
+		try {
+			SolicitudChatResponse solicitud = solicitudService.crear(entrante.solicitante(), entrante.solicitado());
+			responseObserver.onNext(mapper.aSolicitudResponse(solicitud));
+			responseObserver.onCompleted();
+			log.debug("<< crearSolicitud() -> OK, id={}", solicitud.id());
+		} catch (ValidationException ex) {
+			log.debug("<< crearSolicitud() -> INVALID_ARGUMENT");
+			responseObserver.onError(Status.INVALID_ARGUMENT.withDescription(ex.getMessage()).asRuntimeException());
+		} catch (ResourceNotFoundException ex) {
+			log.debug("<< crearSolicitud() -> NOT_FOUND");
+			responseObserver.onError(Status.NOT_FOUND.withDescription(ex.getMessage()).asRuntimeException());
+		} catch (DuplicateResourceException ex) {
+			log.debug("<< crearSolicitud() -> ALREADY_EXISTS");
+			responseObserver.onError(Status.ALREADY_EXISTS.withDescription(ex.getMessage()).asRuntimeException());
+		} catch (ServiceUnavailableException ex) {
+			log.debug("<< crearSolicitud() -> UNAVAILABLE");
+			responseObserver.onError(Status.UNAVAILABLE.withDescription(ex.getMessage()).asRuntimeException());
+		} catch (Exception ex) {
+			log.error("Excepcion no controlada en el endpoint gRPC de creacion de solicitud. "
+					+ "solicitante='{}' solicitado='{}'", request.getSolicitante(), request.getSolicitado(), ex);
+			log.debug("<< crearSolicitud() -> INTERNAL");
+			responseObserver.onError(
+					Status.INTERNAL.withDescription(DETALLE_ERROR_INTERNO).asRuntimeException());
+		}
+	}
+
+	private StatusRuntimeException errorDeValidacion(Set<ConstraintViolation<SolicitudEntrante>> violaciones) {
+		String detalle = violaciones.stream()
+				.map(v -> "%s: %s".formatted(v.getPropertyPath(), v.getMessage()))
+				.collect(Collectors.joining("; "));
+		return Status.INVALID_ARGUMENT
+				.withDescription(DETALLE_VALIDACION + " -> " + detalle)
+				.asRuntimeException();
 	}
 }
