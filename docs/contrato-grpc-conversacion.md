@@ -118,6 +118,7 @@ message SolicitudResponse {
   string solicitado = 3;
   bool aceptada = 4;
   string creada_en = 5;
+  bool pendiente = 6;
 }
 ```
 
@@ -337,14 +338,19 @@ A diferencia de `Historial`/`ListaChats`, aquí `solicitante`/`solicitado` **sí
    `ExisteUsername` de `chat-registro` (ver `CLAUDE.md`, variables `REGISTRO_GRPC_HOST`/
    `REGISTRO_GRPC_PORT`). Si alguno no existe, `NOT_FOUND`. Si `chat-registro` no responde,
    `UNAVAILABLE`.
-4. **No puede existir ya una solicitud entre ambos**, en cualquier sentido (da igual quién sea
-   `solicitante` y quién `solicitado` en la solicitud existente). Si ya existe,
-   `ALREADY_EXISTS`.
+4. **No puede existir ya una solicitud *pendiente* entre ambos**, en cualquier sentido (da
+   igual quién sea `solicitante` y quién `solicitado` en la solicitud existente). Si ya existe,
+   `ALREADY_EXISTS` — y, a propósito, ni se persiste una solicitud nueva ni se publica nada en
+   RabbitMQ: la única respuesta es ese error, con un mensaje que dice que ya hay una pendiente.
+   Una solicitud ya **resuelta** (`pendiente: false` — aceptada o rechazada, aunque hoy no hay
+   forma de llegar a ese estado, ver más abajo) no cuenta para este chequeo y no bloquea una
+   solicitud nueva.
 
-Si las cuatro pasan, se persiste con `aceptada: false` (aceptar o rechazar una solicitud no
-está implementado todavía) y se publica una notificación en RabbitMQ (§6.3) — un fallo al
-publicar **no** hace fallar la petición: la solicitud ya quedó creada, la notificación es un
-aviso best-effort.
+Si las cuatro pasan, se persiste con `aceptada: false` y `pendiente: true` (aceptar o rechazar
+una solicitud no está implementado todavía, así que toda solicitud creada queda pendiente para
+siempre por ahora) y se publica una notificación en RabbitMQ (§6.3) — un fallo al publicar
+**no** hace fallar la petición: la solicitud ya quedó creada, la notificación es un aviso
+best-effort.
 
 ### `CrearSolicitudRequest`
 
@@ -361,6 +367,7 @@ aviso best-effort.
 | `solicitante` | `string` | Quien la inició. |
 | `solicitado` | `string` | Quien la recibió. |
 | `aceptada` | `bool` | Nace siempre en `false` — no hay rpc todavía para aceptarla/rechazarla. |
+| `pendiente` | `bool` | Nace siempre en `true` y hoy se queda así para siempre (no hay rpc para resolverla). Mientras es `true`, bloquea una solicitud nueva entre el mismo par de usuarios — ver la validación 4 más arriba. |
 | `creada_en` | `string` | ISO-8601 UTC, mismo formato que `enviado_en` en `MensajeEntregado` (§3.3). |
 
 ### 6.1 Ejemplo `grpcurl`
@@ -435,8 +442,9 @@ servicio traduce a `ValidationException`, que el controlador traduce a `INVALID_
 
 `CrearSolicitud` delega en `SolicitudChatService` (`com.arquetipo.demo.conversacion.service`),
 que aplica las cuatro validaciones de §6 en orden y, si todas pasan, persiste con
-`SolicitudChatRepository` (`findEntreUsuarios` es el `@Query` que busca una solicitud
-existente entre dos usuarios en cualquier sentido) y notifica con `NotificadorAmqp`
+`SolicitudChatRepository` (`findPendienteEntreUsuarios` es el `@Query` que busca una solicitud
+**pendiente** existente entre dos usuarios en cualquier sentido — filtra por `pendiente: true`,
+así que una solicitud ya resuelta no la encuentra) y notifica con `NotificadorAmqp`
 (`RabbitTemplate.convertAndSend`, exchange declarado en `RabbitMqConfig`,
 `common/config`). La existencia de usernames la resuelve `RegistroGrpcClient`
 (`com.arquetipo.demo.registro.grpc`) — cliente gRPC de `chat-registro`, con su propia copia
@@ -459,7 +467,7 @@ gRPC no tiene *Problem Details*: los errores llegan como `StatusRuntimeException
 | `solicitante`/`solicitado` con formato inválido (Bean Validation) | `CrearSolicitud` | `INVALID_ARGUMENT` | `"El cuerpo de la peticion no supero la validacion -> <campo>: <mensaje>"` |
 | `solicitante` y `solicitado` son el mismo usuario | `CrearSolicitud` | `INVALID_ARGUMENT` | `"No se puede crear una solicitud de chat hacia uno mismo"` |
 | `solicitante`/`solicitado` no existe en `chat-registro` | `CrearSolicitud` | `NOT_FOUND` | `"No existe el usuario solicitante/solicitado '<username>'"` |
-| Ya existe una solicitud entre `solicitante` y `solicitado`, en cualquier sentido | `CrearSolicitud` | `ALREADY_EXISTS` | `"Ya existe una solicitud de chat entre '<a>' y '<b>'"` |
+| Ya existe una solicitud **pendiente** entre `solicitante` y `solicitado`, en cualquier sentido | `CrearSolicitud` | `ALREADY_EXISTS` | `"Ya existe una solicitud de chat pendiente entre '<a>' y '<b>'"` — no se persiste nada nuevo ni se publica nada en RabbitMQ |
 | `chat-registro` no responde al validar `ExisteUsername` | `CrearSolicitud` | `UNAVAILABLE` | `"El servicio 'chat-registro' no esta disponible"` |
 | Cualquier fallo inesperado (MongoDB no disponible, bug interno) | `Historial`, `ListaChats`, `CrearSolicitud` | `INTERNAL` | Mensaje genérico fijo: `"Ocurrio un error inesperado. Contacte con soporte."` — el detalle real queda en el log del servidor. |
 | Cualquier fallo inesperado al procesar un `MensajeSaliente` | `Chat` | *(ninguno)* | Se registra en el log del servidor; el stream sigue abierto, ese mensaje concreto simplemente no se persiste ni se reenvía. |
@@ -502,6 +510,7 @@ pueden listar servicios y construir la petición sin el archivo, apuntando solo 
 
 | Fecha | Cambio |
 |---|---|
+| 2026-09-24 | `SolicitudResponse` suma el campo `pendiente`. Nueva regla de negocio: `CrearSolicitud` solo bloquea (`ALREADY_EXISTS`) si ya existe una solicitud **pendiente** entre los dos usuarios — antes bloqueaba cualquier solicitud previa, sin distinguir su estado; en ese caso no se persiste nada nuevo ni se publica nada en RabbitMQ. |
 | 2026-09-23 | Se agrega `ConversacionGrpcService/CrearSolicitud`: crea una solicitud de chat (paso previo obligatorio para poder chatear), valida `solicitante`/`solicitado` contra `chat-registro` por gRPC (`RegistroGrpcClient`) y notifica por RabbitMQ (exchange `chat.notificaciones`). Aceptar/rechazar la solicitud no está implementado todavía. |
 | 2026-09-20 | Se agrega `ConversacionGrpcService/ListaChats`: lista de chats de un usuario con el último mensaje de cada uno, paginada por cursor (pensada para scroll infinito). Primer endpoint sin equivalente en REST/WebSocket. |
 | 2026-09-18 | Versión inicial: `ConversacionGrpcService/Chat` (bidi streaming, espejo del WebSocket) y `ConversacionGrpcService/Historial` (unario, espejo del REST paginado). Se documenta la entrega cruzada entre WebSocket y gRPC via `NotificadorTiempoReal`. |

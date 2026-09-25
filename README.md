@@ -35,8 +35,9 @@ Paquete por feature bajo `com.arquetipo.demo`, mismo patrón que `chat-registro/
     conoce WebSocket ni gRPC, solo notifica a `NotificadorTiempoReal` tras persistir.
   - `SolicitudChatService` — crea una solicitud de chat: valida que `solicitante` y
     `solicitado` no sean el mismo usuario, que ambos existan en `chat-registro` (vía
-    `RegistroGrpcClient`) y que no exista ya una solicitud entre ambos; persiste y notifica
-    por `NotificadorAmqp`.
+    `RegistroGrpcClient`) y que no exista ya una solicitud **pendiente** entre ambos; si ya
+    existe una, no persiste nada nuevo ni notifica, solo informa del estado actual. Si no,
+    persiste con `pendiente: true` y notifica por `NotificadorAmqp`.
   - `NotificadorTiempoReal` — registro en memoria de "quién está conectado y por dónde
     avisarle", **compartido entre WebSocket y gRPC**: es lo que hace que un mensaje mandado
     por un protocolo se reenvíe a alguien conectado por el otro.

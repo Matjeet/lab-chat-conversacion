@@ -137,7 +137,7 @@ class ConversacionGrpcControllerTest {
 	@Test
 	void crearSolicitud_delegaEnElServicioYMapeaLaRespuesta() {
 		SolicitudChatResponse solicitud = new SolicitudChatResponse(
-				"1", "mateo", "ana", false, Instant.parse("2026-09-23T20:00:00Z"));
+				"1", "mateo", "ana", false, true, Instant.parse("2026-09-23T20:00:00Z"));
 		when(solicitudService.crear("mateo", "ana")).thenReturn(solicitud);
 
 		SolicitudResponse respuesta = stubBloqueante.crearSolicitud(CrearSolicitudRequest.newBuilder()
@@ -149,6 +149,7 @@ class ConversacionGrpcControllerTest {
 		assertThat(respuesta.getSolicitante()).isEqualTo("mateo");
 		assertThat(respuesta.getSolicitado()).isEqualTo("ana");
 		assertThat(respuesta.getAceptada()).isFalse();
+		assertThat(respuesta.getPendiente()).isTrue();
 	}
 
 	@Test

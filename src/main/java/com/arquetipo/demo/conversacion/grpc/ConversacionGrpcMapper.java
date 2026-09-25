@@ -99,6 +99,7 @@ public class ConversacionGrpcMapper {
 				.setSolicitante(solicitud.solicitante())
 				.setSolicitado(solicitud.solicitado())
 				.setAceptada(solicitud.aceptada())
+				.setPendiente(solicitud.pendiente())
 				.setCreadaEn(solicitud.creadaEn().toString())
 				.build();
 	}

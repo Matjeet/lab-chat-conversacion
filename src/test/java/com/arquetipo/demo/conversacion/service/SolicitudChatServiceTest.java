@@ -43,10 +43,10 @@ class SolicitudChatServiceTest {
 	}
 
 	@Test
-	void crear_conUsuariosValidos_persisteYNotifica() {
+	void crear_conUsuariosValidos_persisteConPendienteTrueYNotifica() {
 		when(registroClient.existeUsername("mateo")).thenReturn(true);
 		when(registroClient.existeUsername("ana")).thenReturn(true);
-		when(repository.findEntreUsuarios("mateo", "ana")).thenReturn(Optional.empty());
+		when(repository.findPendienteEntreUsuarios("mateo", "ana")).thenReturn(Optional.empty());
 		when(repository.save(any(SolicitudChat.class))).thenAnswer(invocacion -> {
 			SolicitudChat solicitud = invocacion.getArgument(0);
 			solicitud.setId("1");
@@ -60,6 +60,7 @@ class SolicitudChatServiceTest {
 		assertThat(respuesta.solicitante()).isEqualTo("mateo");
 		assertThat(respuesta.solicitado()).isEqualTo("ana");
 		assertThat(respuesta.aceptada()).isFalse();
+		assertThat(respuesta.pendiente()).isTrue();
 		verify(notificadorAmqp).notificarSolicitud("mateo", "ana");
 	}
 
@@ -92,10 +93,10 @@ class SolicitudChatServiceTest {
 	}
 
 	@Test
-	void crear_conSolicitudYaExistenteEntreAmbos_lanzaDuplicateResourceException() {
+	void crear_conSolicitudPendienteYaExistenteEntreAmbos_lanzaDuplicateResourceExceptionSinPersistirNiNotificar() {
 		when(registroClient.existeUsername("mateo")).thenReturn(true);
 		when(registroClient.existeUsername("ana")).thenReturn(true);
-		when(repository.findEntreUsuarios("mateo", "ana")).thenReturn(Optional.of(new SolicitudChat()));
+		when(repository.findPendienteEntreUsuarios("mateo", "ana")).thenReturn(Optional.of(new SolicitudChat()));
 
 		assertThatThrownBy(() -> service.crear("mateo", "ana")).isInstanceOf(DuplicateResourceException.class);
 

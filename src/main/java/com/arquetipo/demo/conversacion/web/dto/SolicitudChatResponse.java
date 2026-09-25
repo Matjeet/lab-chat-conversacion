@@ -21,6 +21,9 @@ public record SolicitudChatResponse(
 		@Schema(description = "Si la solicitud ya fue aceptada", example = "false")
 		boolean aceptada,
 
+		@Schema(description = "Si la solicitud sigue pendiente de resolver", example = "true")
+		boolean pendiente,
+
 		@Schema(description = "Instante de creacion (UTC)", example = "2026-09-23T20:53:47.441193Z")
 		Instant creadaEn
 ) {

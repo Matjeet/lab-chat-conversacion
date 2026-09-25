@@ -11,7 +11,9 @@ import org.springframework.data.mongodb.core.mapping.Document;
 /**
  * Solicitud de chat de un usuario hacia otro: paso previo obligatorio para poder chatear (ver
  * ConversacionGrpcController#crearSolicitud). Aceptarla o rechazarla no esta implementado
- * todavia -- {@code aceptada} nace siempre en {@code false}.
+ * todavia -- {@code aceptada} nace siempre en {@code false} y {@code pendiente} siempre en
+ * {@code true}. Mientras exista una solicitud pendiente entre dos usuarios, no se puede crear
+ * otra entre ellos (ver {@code SolicitudChatService#crear}).
  */
 @Getter
 @Setter
@@ -28,6 +30,8 @@ public class SolicitudChat {
 	private String solicitado;
 
 	private boolean aceptada;
+
+	private boolean pendiente;
 
 	@CreatedDate
 	private Instant creadaEn;

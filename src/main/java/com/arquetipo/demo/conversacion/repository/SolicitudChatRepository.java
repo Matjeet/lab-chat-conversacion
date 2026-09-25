@@ -11,10 +11,11 @@ import org.springframework.data.mongodb.repository.Query;
 public interface SolicitudChatRepository extends MongoRepository<SolicitudChat, String> {
 
 	/**
-	 * Busca una solicitud existente entre dos usuarios, sin importar quien fue el solicitante
-	 * original -- usado para no permitir una segunda solicitud mientras exista una (ver
-	 * {@code SolicitudChatService#crear}).
+	 * Busca una solicitud **pendiente** entre dos usuarios, sin importar quien fue el
+	 * solicitante original -- usado para no permitir una segunda solicitud mientras exista una
+	 * sin resolver (ver {@code SolicitudChatService#crear}). Una solicitud ya resuelta
+	 * (aceptada o rechazada -- pendiente en {@code false}) no bloquea una nueva.
 	 */
-	@Query("{ $or: [ { solicitante: ?0, solicitado: ?1 }, { solicitante: ?1, solicitado: ?0 } ] }")
-	Optional<SolicitudChat> findEntreUsuarios(String usuarioA, String usuarioB);
+	@Query("{ pendiente: true, $or: [ { solicitante: ?0, solicitado: ?1 }, { solicitante: ?1, solicitado: ?0 } ] }")
+	Optional<SolicitudChat> findPendienteEntreUsuarios(String usuarioA, String usuarioB);
 }

@@ -16,6 +16,7 @@ public class SolicitudChatMapper {
 				solicitud.getSolicitante(),
 				solicitud.getSolicitado(),
 				solicitud.isAceptada(),
+				solicitud.isPendiente(),
 				solicitud.getCreadaEn());
 	}
 }
