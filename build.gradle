@@ -42,6 +42,9 @@ dependencies {
 	// --- Persistencia (mensajes en MongoDB) ---
 	implementation 'org.springframework.boot:spring-boot-starter-data-mongodb'
 
+	// --- AMQP (notificaciones a RabbitMQ, p. ej. solicitudes de chat nuevas) ---
+	implementation 'org.springframework.boot:spring-boot-starter-amqp'
+
 	// --- Observabilidad ---
 	implementation 'org.springframework.boot:spring-boot-starter-actuator'
 

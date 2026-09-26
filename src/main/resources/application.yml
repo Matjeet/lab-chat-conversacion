@@ -15,6 +15,25 @@ spring:
   mongodb:
     uri: ${MONGODB_URI:mongodb://localhost:27017/chat_conversacion}
 
+  # RabbitMQ: notificaciones de eventos (p. ej. solicitudes de chat nuevas), ver
+  # com.arquetipo.demo.common.config.RabbitMqConfig / conversacion.service.NotificadorAmqp.
+  # La conexion la autoconfigura spring-boot-starter-amqp a partir de estas propiedades y es
+  # perezosa: el arranque de la app no depende de que RabbitMQ ya este levantado.
+  rabbitmq:
+    host: ${RABBITMQ_HOST:localhost}
+    port: ${RABBITMQ_PORT:5672}
+    username: ${RABBITMQ_USERNAME:guest}
+    password: ${RABBITMQ_PASSWORD:guest}
+
+# Direccion gRPC de chat-registro: chat-conversacion es cliente de su rpc ExisteUsername (ver
+# com.arquetipo.demo.registro.grpc.RegistroGrpcClient), para validar solicitante/solicitado
+# antes de crear una solicitud de chat. Mismo nombre de propiedad que usa chat-gateway para lo
+# mismo.
+servicios:
+  registro:
+    grpc-host: ${REGISTRO_GRPC_HOST:localhost}
+    grpc-port: ${REGISTRO_GRPC_PORT:9090}
+
 grpc:
   server:
     # Servidor gRPC embebido (com.arquetipo.demo.common.grpc) — tercer protocolo del chat,
@@ -52,6 +71,10 @@ app:
     # host + puerto y SIN barra final (mismo criterio que CORS_ALLOWED_ORIGINS en chat-registro).
     allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:3000}
     allow-credentials: ${CORS_ALLOW_CREDENTIALS:false}
+  amqp:
+    # Exchange (topic) donde se publican las notificaciones (ver RabbitMqConfig /
+    # NotificadorAmqp). La routing key distingue el tipo (hoy solo "notificacion.solicitud").
+    notificaciones-exchange: ${RABBITMQ_NOTIFICACIONES_EXCHANGE:chat.notificaciones}
 
 logging:
   level:

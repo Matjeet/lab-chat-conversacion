@@ -32,6 +32,17 @@ service ConversacionGrpcService {
   // (no por pagina/offset): pensado para scroll infinito en el cliente. Unario, sin streaming
   // (una respuesta = una pagina).
   rpc ListaChats (ListaChatsRequest) returns (ListaChatsResponse);
+
+  // Crea una solicitud de chat de "solicitante" hacia "solicitado": el paso previo obligatorio
+  // para poder chatear (ver CLAUDE.md, seccion chat-conversacion). Valida contra chat-registro
+  // que ambos usernames existan (NOT_FOUND si alguno no existe, via gRPC a chat-registro/
+  // ExisteUsername), que no sean el mismo usuario (INVALID_ARGUMENT) y que no exista ya una
+  // solicitud entre ambos en cualquier sentido (ALREADY_EXISTS). Tras persistir, publica una
+  // notificacion en RabbitMQ (ver docs/contrato-grpc-conversacion.md) -- un fallo al publicar
+  // no revierte la solicitud ya creada, es un aviso best-effort. Aceptar o rechazar la
+  // solicitud no esta implementado todavia: aceptada nace siempre en false. Unario, sin
+  // streaming.
+  rpc CrearSolicitud (CrearSolicitudRequest) returns (SolicitudResponse);
 }
 
 // Lo que manda el cliente por el stream de Chat. El remitente no viaja aqui: lo determina la
@@ -106,4 +117,25 @@ message ListaChatsResponse {
   // false: no lo mandes de vuelta en ese caso, no hay garantia de que siga siendo valido.
   string next_cursor = 2;
   bool has_more = 3;
+}
+
+message CrearSolicitudRequest {
+  // Username (chat-registro) de quien inicia la solicitud. Mismo formato que destinatario en
+  // MensajeSaliente.
+  string solicitante = 1;
+  // Username (chat-registro) de quien la recibe.
+  string solicitado = 2;
+}
+
+message SolicitudResponse {
+  string id = 1;
+  string solicitante = 2;
+  string solicitado = 3;
+  bool aceptada = 4;
+  // Instante de creacion en UTC, ISO-8601, mismo formato que enviado_en en MensajeEntregado.
+  string creada_en = 5;
+  // Si la solicitud sigue pendiente de resolver (aceptar/rechazar no esta implementado
+  // todavia, asi que nace y se queda en true). Mientras haya una solicitud pendiente entre dos
+  // usuarios, CrearSolicitud no crea una segunda -- ver la documentacion del rpc.
+  bool pendiente = 6;
 }
