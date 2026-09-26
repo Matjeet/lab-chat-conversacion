@@ -62,7 +62,7 @@ class SolicitudChatServiceTest {
 		assertThat(respuesta.solicitado()).isEqualTo("ana");
 		assertThat(respuesta.aceptada()).isFalse();
 		assertThat(respuesta.pendiente()).isTrue();
-		verify(notificadorAmqp).notificarSolicitud("mateo", "ana", false);
+		verify(notificadorAmqp).notificarSolicitud("mateo", "ana", false, true);
 	}
 
 	@Test
@@ -102,6 +102,6 @@ class SolicitudChatServiceTest {
 		assertThatThrownBy(() -> service.crear("mateo", "ana")).isInstanceOf(DuplicateResourceException.class);
 
 		verify(repository, never()).save(any());
-		verify(notificadorAmqp, never()).notificarSolicitud(any(), any(), anyBoolean());
+		verify(notificadorAmqp, never()).notificarSolicitud(any(), any(), anyBoolean(), anyBoolean());
 	}
 }

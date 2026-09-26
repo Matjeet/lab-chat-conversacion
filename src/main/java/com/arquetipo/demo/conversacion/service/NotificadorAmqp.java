@@ -31,11 +31,11 @@ public class NotificadorAmqp {
 		this.exchange = notificacionesExchange;
 	}
 
-	public void notificarSolicitud(String solicitante, String solicitado, boolean aceptada) {
-		log.debug(">> notificarSolicitud(solicitante='{}', solicitado='{}', aceptada={})",
-				solicitante, solicitado, aceptada);
+	public void notificarSolicitud(String solicitante, String solicitado, boolean aceptada, boolean pendiente) {
+		log.debug(">> notificarSolicitud(solicitante='{}', solicitado='{}', aceptada={}, pendiente={})",
+				solicitante, solicitado, aceptada, pendiente);
 		NotificacionAmqp notificacion = new NotificacionAmqp(
-				solicitante, solicitado, TIPO_SOLICITUD, new MetaSolicitud(aceptada));
+				solicitante, solicitado, TIPO_SOLICITUD, new MetaSolicitud(aceptada, pendiente));
 		try {
 			rabbitTemplate.convertAndSend(exchange.getName(), ROUTING_KEY_SOLICITUD, notificacion);
 			log.debug("<< notificarSolicitud() -> OK");
