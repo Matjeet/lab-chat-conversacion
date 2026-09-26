@@ -70,7 +70,7 @@ public class SolicitudChatService {
 		log.debug("Solicitud de chat guardada id={} solicitante='{}' solicitado='{}'",
 				guardada.getId(), solicitante, solicitado);
 
-		notificadorAmqp.notificarSolicitud(solicitante, solicitado);
+		notificadorAmqp.notificarSolicitud(solicitante, solicitado, guardada.isAceptada());
 
 		SolicitudChatResponse respuesta = mapper.toResponse(guardada);
 		log.debug("<< crear() -> OK, id={}", respuesta.id());

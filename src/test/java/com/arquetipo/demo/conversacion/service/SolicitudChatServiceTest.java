@@ -3,6 +3,7 @@ package com.arquetipo.demo.conversacion.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -61,7 +62,7 @@ class SolicitudChatServiceTest {
 		assertThat(respuesta.solicitado()).isEqualTo("ana");
 		assertThat(respuesta.aceptada()).isFalse();
 		assertThat(respuesta.pendiente()).isTrue();
-		verify(notificadorAmqp).notificarSolicitud("mateo", "ana");
+		verify(notificadorAmqp).notificarSolicitud("mateo", "ana", false);
 	}
 
 	@Test
@@ -101,6 +102,6 @@ class SolicitudChatServiceTest {
 		assertThatThrownBy(() -> service.crear("mateo", "ana")).isInstanceOf(DuplicateResourceException.class);
 
 		verify(repository, never()).save(any());
-		verify(notificadorAmqp, never()).notificarSolicitud(any(), any());
+		verify(notificadorAmqp, never()).notificarSolicitud(any(), any(), anyBoolean());
 	}
 }

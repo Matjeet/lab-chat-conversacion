@@ -1,5 +1,6 @@
 package com.arquetipo.demo.conversacion.service;
 
+import com.arquetipo.demo.conversacion.web.dto.MetaSolicitud;
 import com.arquetipo.demo.conversacion.web.dto.NotificacionAmqp;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.amqp.AmqpException;
@@ -30,9 +31,11 @@ public class NotificadorAmqp {
 		this.exchange = notificacionesExchange;
 	}
 
-	public void notificarSolicitud(String solicitante, String solicitado) {
-		log.debug(">> notificarSolicitud(solicitante='{}', solicitado='{}')", solicitante, solicitado);
-		NotificacionAmqp notificacion = new NotificacionAmqp(solicitante, solicitado, TIPO_SOLICITUD);
+	public void notificarSolicitud(String solicitante, String solicitado, boolean aceptada) {
+		log.debug(">> notificarSolicitud(solicitante='{}', solicitado='{}', aceptada={})",
+				solicitante, solicitado, aceptada);
+		NotificacionAmqp notificacion = new NotificacionAmqp(
+				solicitante, solicitado, TIPO_SOLICITUD, new MetaSolicitud(aceptada));
 		try {
 			rabbitTemplate.convertAndSend(exchange.getName(), ROUTING_KEY_SOLICITUD, notificacion);
 			log.debug("<< notificarSolicitud() -> OK");

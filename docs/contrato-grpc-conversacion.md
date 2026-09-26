@@ -397,12 +397,22 @@ Tras persistir, se publica un mensaje JSON en el exchange **topic** `chat.notifi
 (configurable con `RABBITMQ_NOTIFICACIONES_EXCHANGE`), routing key `notificacion.solicitud`:
 
 ```json
-{ "solicitante": "mateo", "solicitado": "ana", "tipo": "solicitud" }
+{
+  "solicitante": "mateo",
+  "solicitado": "ana",
+  "tipo": "solicitud",
+  "meta": { "aceptada": false }
+}
 ```
 
 `tipo` distingue el motivo de la notificación — hoy solo existe `"solicitud"`, pensado para
 admitir otros tipos en el futuro (p. ej. una solicitud aceptada) sin cambiar el contrato del
-mensaje ni el exchange. Un cliente interesado debe declarar su propia cola y enlazarla al
+mensaje ni el exchange. `meta` es un objeto con información adicional propia de `tipo` — para
+`"solicitud"`, si ya fue aceptada (`aceptada`, siempre `false` por ahora: aceptar/rechazar no
+está implementado todavía, ver §6). Un consumidor que no conozca `meta` (o un campo nuevo
+dentro de él) debe ignorarlo sin fallar, no tratarlo como un error — así lo hace
+`chat-notificaciones`, el único consumidor hoy (ver su propio `CLAUDE.md`). Un cliente
+interesado debe declarar su propia cola y enlazarla al
 exchange con la routing key que le interese (`notificacion.solicitud`, o `notificacion.#` para
 recibir cualquier tipo futuro) — `chat-conversacion` no declara ninguna cola, solo el exchange.
 
@@ -510,6 +520,7 @@ pueden listar servicios y construir la petición sin el archivo, apuntando solo 
 
 | Fecha | Cambio |
 |---|---|
+| 2026-09-26 | El mensaje AMQP de §6.3 suma el campo `meta` (objeto con información adicional propia de `tipo` — para `"solicitud"`, si ya fue aceptada). |
 | 2026-09-24 | `SolicitudResponse` suma el campo `pendiente`. Nueva regla de negocio: `CrearSolicitud` solo bloquea (`ALREADY_EXISTS`) si ya existe una solicitud **pendiente** entre los dos usuarios — antes bloqueaba cualquier solicitud previa, sin distinguir su estado; en ese caso no se persiste nada nuevo ni se publica nada en RabbitMQ. |
 | 2026-09-23 | Se agrega `ConversacionGrpcService/CrearSolicitud`: crea una solicitud de chat (paso previo obligatorio para poder chatear), valida `solicitante`/`solicitado` contra `chat-registro` por gRPC (`RegistroGrpcClient`) y notifica por RabbitMQ (exchange `chat.notificaciones`). Aceptar/rechazar la solicitud no está implementado todavía. |
 | 2026-09-20 | Se agrega `ConversacionGrpcService/ListaChats`: lista de chats de un usuario con el último mensaje de cada uno, paginada por cursor (pensada para scroll infinito). Primer endpoint sin equivalente en REST/WebSocket. |
