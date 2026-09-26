@@ -4,6 +4,8 @@ import com.arquetipo.demo.conversacion.web.dto.CursorPage;
 import com.arquetipo.demo.conversacion.web.dto.MensajeEntrante;
 import com.arquetipo.demo.conversacion.web.dto.MensajeResponse;
 import com.arquetipo.demo.conversacion.web.dto.PageResponse;
+import com.arquetipo.demo.conversacion.web.dto.SolicitudChatResponse;
+import com.arquetipo.demo.conversacion.web.dto.SolicitudEntrante;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
@@ -85,5 +87,20 @@ public class ConversacionGrpcMapper {
 				.setUltimoMensaje(aMensajeEntregado(chatResumen.ultimoMensaje()))
 				.build()));
 		return builder.build();
+	}
+
+	SolicitudEntrante aSolicitudEntrante(CrearSolicitudRequest request) {
+		return new SolicitudEntrante(request.getSolicitante(), request.getSolicitado());
+	}
+
+	SolicitudResponse aSolicitudResponse(SolicitudChatResponse solicitud) {
+		return SolicitudResponse.newBuilder()
+				.setId(solicitud.id())
+				.setSolicitante(solicitud.solicitante())
+				.setSolicitado(solicitud.solicitado())
+				.setAceptada(solicitud.aceptada())
+				.setPendiente(solicitud.pendiente())
+				.setCreadaEn(solicitud.creadaEn().toString())
+				.build();
 	}
 }
