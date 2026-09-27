@@ -7,6 +7,7 @@ import com.arquetipo.demo.common.exception.ValidationException;
 import com.arquetipo.demo.conversacion.service.ConversacionService;
 import com.arquetipo.demo.conversacion.service.NotificadorTiempoReal;
 import com.arquetipo.demo.conversacion.service.SolicitudChatService;
+import com.arquetipo.demo.conversacion.web.dto.ActualizarSolicitudEntrante;
 import com.arquetipo.demo.conversacion.web.dto.CursorPage;
 import com.arquetipo.demo.conversacion.web.dto.MensajeEntrante;
 import com.arquetipo.demo.conversacion.web.dto.MensajeResponse;
@@ -176,7 +177,42 @@ public class ConversacionGrpcController extends ConversacionGrpcServiceGrpc.Conv
 		}
 	}
 
-	private StatusRuntimeException errorDeValidacion(Set<ConstraintViolation<SolicitudEntrante>> violaciones) {
+	@Override
+	public void actualizarSolicitud(ActualizarSolicitudRequest request,
+			StreamObserver<SolicitudResponse> responseObserver) {
+		log.debug(">> actualizarSolicitud(usuarioA='{}', usuarioB='{}', aceptada={})",
+				request.getUsuarioA(), request.getUsuarioB(), request.getAceptada());
+		ActualizarSolicitudEntrante entrante = mapper.aActualizarSolicitudEntrante(request);
+
+		Set<ConstraintViolation<ActualizarSolicitudEntrante>> violaciones = validator.validate(entrante);
+		if (!violaciones.isEmpty()) {
+			log.debug("<< actualizarSolicitud() -> INVALID_ARGUMENT ({} violacion(es))", violaciones.size());
+			responseObserver.onError(errorDeValidacion(violaciones));
+			return;
+		}
+
+		try {
+			SolicitudChatResponse solicitud = solicitudService.actualizar(
+					entrante.usuarioA(), entrante.usuarioB(), entrante.aceptada());
+			responseObserver.onNext(mapper.aSolicitudResponse(solicitud));
+			responseObserver.onCompleted();
+			log.debug("<< actualizarSolicitud() -> OK, id={}", solicitud.id());
+		} catch (ValidationException ex) {
+			log.debug("<< actualizarSolicitud() -> INVALID_ARGUMENT");
+			responseObserver.onError(Status.INVALID_ARGUMENT.withDescription(ex.getMessage()).asRuntimeException());
+		} catch (ResourceNotFoundException ex) {
+			log.debug("<< actualizarSolicitud() -> NOT_FOUND");
+			responseObserver.onError(Status.NOT_FOUND.withDescription(ex.getMessage()).asRuntimeException());
+		} catch (Exception ex) {
+			log.error("Excepcion no controlada en el endpoint gRPC de actualizacion de solicitud. "
+					+ "usuarioA='{}' usuarioB='{}'", request.getUsuarioA(), request.getUsuarioB(), ex);
+			log.debug("<< actualizarSolicitud() -> INTERNAL");
+			responseObserver.onError(
+					Status.INTERNAL.withDescription(DETALLE_ERROR_INTERNO).asRuntimeException());
+		}
+	}
+
+	private StatusRuntimeException errorDeValidacion(Set<? extends ConstraintViolation<?>> violaciones) {
 		String detalle = violaciones.stream()
 				.map(v -> "%s: %s".formatted(v.getPropertyPath(), v.getMessage()))
 				.collect(Collectors.joining("; "));

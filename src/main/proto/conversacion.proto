@@ -43,6 +43,16 @@ service ConversacionGrpcService {
   // solicitud no esta implementado todavia: aceptada nace siempre en false. Unario, sin
   // streaming.
   rpc CrearSolicitud (CrearSolicitudRequest) returns (SolicitudResponse);
+
+  // Actualiza una solicitud de chat existente para fijar si fue aceptada o rechazada: busca la
+  // solicitud PENDIENTE entre "usuario_a" y "usuario_b" (sin importar el orden ni quien fue el
+  // solicitante original -- mismo criterio de busqueda que el chequeo de duplicados de
+  // CrearSolicitud) y le fija pendiente=false y aceptada=<lo que venga en la peticion>.
+  // NOT_FOUND si no hay ninguna solicitud pendiente entre ambos. Si aceptada es true, registra
+  // la amistad entre ambos (coleccion "amigos") y, en cualquier caso, publica una notificacion
+  // en RabbitMQ con el meta ya actualizado (ver docs/contrato-grpc-conversacion.md). Unario,
+  // sin streaming.
+  rpc ActualizarSolicitud (ActualizarSolicitudRequest) returns (SolicitudResponse);
 }
 
 // Lo que manda el cliente por el stream de Chat. El remitente no viaja aqui: lo determina la
@@ -138,4 +148,13 @@ message SolicitudResponse {
   // todavia, asi que nace y se queda en true). Mientras haya una solicitud pendiente entre dos
   // usuarios, CrearSolicitud no crea una segunda -- ver la documentacion del rpc.
   bool pendiente = 6;
+}
+
+message ActualizarSolicitudRequest {
+  // Los dos usuarios de la solicitud, en cualquier orden -- se busca la solicitud pendiente
+  // entre ambos, no importa quien fue el solicitante original.
+  string usuario_a = 1;
+  string usuario_b = 2;
+  // true = aceptada, false = rechazada.
+  bool aceptada = 3;
 }
