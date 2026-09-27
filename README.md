@@ -4,14 +4,14 @@ Servicio de chat en tiempo real, comunicación 1 a 1 entre dos usuarios, por **t
 protocolos**: WebSocket, REST (solo el historial) y gRPC. Los mensajes son de texto por ahora
 y se persisten en **MongoDB**. Antes de poder chatear con alguien hace falta crear una
 **solicitud de chat** (`CrearSolicitud`, gRPC), que valida ambos usernames contra
-`chat-registro` y avisa por **RabbitMQ**; aceptarla o rechazarla no está implementado
-todavía (ver más abajo).
+`chat-registro` y avisa por **RabbitMQ**; el otro usuario la acepta o la rechaza con
+`ActualizarSolicitud` (gRPC) — aceptarla registra la amistad entre ambos.
 
 > Estado actual: primera implementación (nace como copia del arquetipo MVC compartido, ver
 > `chat-registro/` y `chat-gateway/`). Cubre el envío 1 a 1 (WebSocket y gRPC), el historial
 > de una conversación (REST y gRPC), la lista de chats paginada por cursor (gRPC) y la
-> creación de solicitudes de chat (gRPC, con validación contra `chat-registro` y notificación
-> por RabbitMQ) — un mensaje mandado por cualquiera de los tres protocolos
+> creación y resolución de solicitudes de chat (gRPC, con validación contra `chat-registro` y
+> notificación por RabbitMQ) — un mensaje mandado por cualquiera de los tres protocolos
 > se reenvía en tiempo real sin importar por cuál de los otros dos esté conectado el
 > destinatario. `{usuario}` es el `username` de `chat-registro` (mismo formato, validado al
 > conectar); falta la autenticación real — nada comprueba todavía que quien se conecta sea el
@@ -27,22 +27,30 @@ Paquete por feature bajo `com.arquetipo.demo`, mismo patrón que `chat-registro/
   `enviadoEn`/`creadaEn`), `common/config/RabbitMqConfig` (exchange de notificaciones AMQP) y
   `common/grpc/` (arranca/detiene el servidor gRPC embebido, mismo patrón que
   `chat-registro` — genérico, no sabe nada del chat en sí).
-- `conversacion/` — la feature: `domain/Mensaje` y `domain/SolicitudChat` (documentos de
-  MongoDB), `repository/` (`MensajeRepository` + `MensajeRepositoryCustom`/`Impl`, esta
-  última con la agregación de Mongo de `listaChats`: agrupa por interlocutor y se queda con
-  el mensaje más reciente de cada uno; y `SolicitudChatRepository`), `mapper/`, `service/`:
+- `conversacion/` — la feature: `domain/Mensaje`, `domain/SolicitudChat` y `domain/Amistad`
+  (documentos de MongoDB), `repository/` (`MensajeRepository` + `MensajeRepositoryCustom`/
+  `Impl`, esta última con la agregación de Mongo de `listaChats`: agrupa por interlocutor y se
+  queda con el mensaje más reciente de cada uno; `SolicitudChatRepository`; y
+  `AmistadRepository`), `mapper/`, `service/`:
   - `ConversacionService` — persiste el mensaje, expone el historial y la lista de chats; no
     conoce WebSocket ni gRPC, solo notifica a `NotificadorTiempoReal` tras persistir.
-  - `SolicitudChatService` — crea una solicitud de chat: valida que `solicitante` y
-    `solicitado` no sean el mismo usuario, que ambos existan en `chat-registro` (vía
-    `RegistroGrpcClient`) y que no exista ya una solicitud **pendiente** entre ambos; si ya
-    existe una, no persiste nada nuevo ni notifica, solo informa del estado actual. Si no,
-    persiste con `pendiente: true` y notifica por `NotificadorAmqp`.
+  - `SolicitudChatService` — crea y resuelve solicitudes de chat:
+    - `crear` — valida que `solicitante` y `solicitado` no sean el mismo usuario, que ambos
+      existan en `chat-registro` (vía `RegistroGrpcClient`) y que no exista ya una solicitud
+      **pendiente** entre ambos; si ya existe una, no persiste nada nuevo ni notifica, solo
+      informa del estado actual. Si no, persiste con `pendiente: true` y notifica por
+      `NotificadorAmqp`.
+    - `actualizar` — busca la solicitud pendiente entre dos usuarios (sin importar el orden),
+      le fija `pendiente: false` y `aceptada` al valor pedido; si se acepta, registra la
+      amistad (`AmistadRepository`); en cualquier caso, notifica por `NotificadorAmqp` con el
+      estado ya resuelto.
   - `NotificadorTiempoReal` — registro en memoria de "quién está conectado y por dónde
     avisarle", **compartido entre WebSocket y gRPC**: es lo que hace que un mensaje mandado
     por un protocolo se reenvíe a alguien conectado por el otro.
-  - `NotificadorAmqp` — publica en el exchange de RabbitMQ (`RabbitMqConfig`); un fallo al
-    publicar se registra pero no revierte la solicitud ya persistida (aviso best-effort).
+  - `NotificadorAmqp` — publica en el exchange de RabbitMQ (`RabbitMqConfig`), una notificación
+    por creación (routing key `notificacion.solicitud`) y otra por resolución (routing key
+    `notificacion.solicitud.actualizada`); un fallo al publicar se registra pero no revierte
+    la operación ya persistida (aviso best-effort).
   - `ChatCursor` — codifica/decodifica el cursor opaco de paginación de `listaChats`.
 
   y dos capas de transporte, ambas delgadas (delegan todo en lo de arriba):
@@ -53,14 +61,16 @@ Paquete por feature bajo `com.arquetipo.demo`, mismo patrón que `chat-registro/
     (`@CrossOrigin`) via `CORS_ALLOWED_ORIGINS`.
   - `grpc/` (puerto 9091): `ConversacionGrpcController` (`Chat` bidi streaming, `Historial`
     unario, `ListaChats` unario — lista de chats con el último mensaje de cada uno, paginada
-    por **cursor** para scroll infinito —, y `CrearSolicitud` unario — crea una solicitud de
-    chat, valida contra `chat-registro` y notifica por RabbitMQ; ninguno de los dos tiene
+    por **cursor** para scroll infinito —, `CrearSolicitud` unario — crea una solicitud de
+    chat, valida contra `chat-registro` y notifica por RabbitMQ —, y `ActualizarSolicitud`
+    unario — la acepta o rechaza, buscándola por los dos usuarios; ninguno de los tres tiene
     equivalente todavía en REST/WebSocket) + `UsuarioMetadataInterceptor` (equivalente gRPC de
     `UsuarioHandshakeInterceptor`: valida la cabecera de metadata `usuario` del stream `Chat`,
     no aplica al resto de rpc). Ver `docs/contrato-grpc-conversacion.md`.
 - `registro/grpc/` — `RegistroGrpcClient`: cliente gRPC de `chat-registro` (copia local y
-  mínima de su `.proto`, solo `ExisteUsername`), usado por `SolicitudChatService` para
-  validar usernames. Mismo patrón que el cliente equivalente en `chat-gateway`.
+  mínima de su `.proto`, solo `ExisteUsername`), usado por `SolicitudChatService#crear` para
+  validar usernames (`actualizar` no vuelve a validarlos). Mismo patrón que el cliente
+  equivalente en `chat-gateway`.
 
 ## Stack
 
@@ -116,7 +126,7 @@ alcanzable por gRPC (por defecto `localhost:9090`, ver `servicios.registro.*` / 
 |---------|-----|
 | WebSocket del chat | ws://localhost:8082/ws/chat/{usuario} |
 | Historial de una conversación (paginado) | http://localhost:8082/api/v1/conversaciones/{usuarioA}/{usuarioB}?page=0&size=20 |
-| gRPC (`Chat` + `Historial` + `ListaChats` + `CrearSolicitud`) | localhost:9091 — ver `docs/contrato-grpc-conversacion.md` |
+| gRPC (`Chat` + `Historial` + `ListaChats` + `CrearSolicitud` + `ActualizarSolicitud`) | localhost:9091 — ver `docs/contrato-grpc-conversacion.md` |
 | Swagger UI | http://localhost:8082/swagger-ui.html |
 | OpenAPI JSON | http://localhost:8082/v3/api-docs |
 | Actuator health | http://localhost:8082/actuator/health |

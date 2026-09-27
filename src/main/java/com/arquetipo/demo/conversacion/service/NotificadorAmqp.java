@@ -22,6 +22,7 @@ public class NotificadorAmqp {
 
 	public static final String TIPO_SOLICITUD = "solicitud";
 	private static final String ROUTING_KEY_SOLICITUD = "notificacion.solicitud";
+	private static final String ROUTING_KEY_SOLICITUD_ACTUALIZADA = "notificacion.solicitud.actualizada";
 
 	private final RabbitTemplate rabbitTemplate;
 	private final TopicExchange exchange;
@@ -41,6 +42,27 @@ public class NotificadorAmqp {
 			log.debug("<< notificarSolicitud() -> OK");
 		} catch (AmqpException ex) {
 			log.error("No se pudo publicar la notificacion de solicitud en RabbitMQ. "
+					+ "solicitante='{}' solicitado='{}'", solicitante, solicitado, ex);
+		}
+	}
+
+	/**
+	 * Avisa que una solicitud ya se resolvio (ver {@code SolicitudChatService#actualizar}) --
+	 * routing key distinta de {@link #notificarSolicitud} para que un consumidor pueda
+	 * distinguir la creacion de la resolucion si le interesa, aunque hoy
+	 * {@code chat-notificaciones} este suscrito a ambas con el mismo comodin. {@code pendiente}
+	 * siempre viaja en {@code false}: una vez resuelta, ya no puede volver a estar pendiente.
+	 */
+	public void notificarActualizacionSolicitud(String solicitante, String solicitado, boolean aceptada) {
+		log.debug(">> notificarActualizacionSolicitud(solicitante='{}', solicitado='{}', aceptada={})",
+				solicitante, solicitado, aceptada);
+		NotificacionAmqp notificacion = new NotificacionAmqp(
+				solicitante, solicitado, TIPO_SOLICITUD, new MetaSolicitud(aceptada, false));
+		try {
+			rabbitTemplate.convertAndSend(exchange.getName(), ROUTING_KEY_SOLICITUD_ACTUALIZADA, notificacion);
+			log.debug("<< notificarActualizacionSolicitud() -> OK");
+		} catch (AmqpException ex) {
+			log.error("No se pudo publicar la notificacion de actualizacion de solicitud en RabbitMQ. "
 					+ "solicitante='{}' solicitado='{}'", solicitante, solicitado, ex);
 		}
 	}

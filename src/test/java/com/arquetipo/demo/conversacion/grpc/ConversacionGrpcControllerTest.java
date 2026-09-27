@@ -2,6 +2,7 @@ package com.arquetipo.demo.conversacion.grpc;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
@@ -191,6 +192,44 @@ class ConversacionGrpcControllerTest {
 				CrearSolicitudRequest.newBuilder().setSolicitante("mateo").setSolicitado("ana").build()));
 
 		assertThat(excepcion.getStatus().getCode()).isEqualTo(Status.Code.UNAVAILABLE);
+	}
+
+	@Test
+	void actualizarSolicitud_delegaEnElServicioYMapeaLaRespuesta() {
+		SolicitudChatResponse solicitud = new SolicitudChatResponse(
+				"1", "mateo", "ana", true, false, Instant.parse("2026-09-23T20:00:00Z"));
+		when(solicitudService.actualizar("ana", "mateo", true)).thenReturn(solicitud);
+
+		SolicitudResponse respuesta = stubBloqueante.actualizarSolicitud(ActualizarSolicitudRequest.newBuilder()
+				.setUsuarioA("ana")
+				.setUsuarioB("mateo")
+				.setAceptada(true)
+				.build());
+
+		assertThat(respuesta.getSolicitante()).isEqualTo("mateo");
+		assertThat(respuesta.getSolicitado()).isEqualTo("ana");
+		assertThat(respuesta.getAceptada()).isTrue();
+		assertThat(respuesta.getPendiente()).isFalse();
+	}
+
+	@Test
+	void actualizarSolicitud_conUsernameInvalido_devuelveInvalidArgumentSinLlamarAlServicio() {
+		StatusRuntimeException excepcion = catchStatusRuntimeException(() -> stubBloqueante.actualizarSolicitud(
+				ActualizarSolicitudRequest.newBuilder().setUsuarioA("ma").setUsuarioB("ana").setAceptada(true).build()));
+
+		assertThat(excepcion.getStatus().getCode()).isEqualTo(Status.Code.INVALID_ARGUMENT);
+		verify(solicitudService, never()).actualizar(any(), any(), anyBoolean());
+	}
+
+	@Test
+	void actualizarSolicitud_sinSolicitudPendiente_devuelveNotFound() {
+		when(solicitudService.actualizar("mateo", "ana", true))
+				.thenThrow(new ResourceNotFoundException("No existe una solicitud de chat pendiente entre 'mateo' y 'ana'"));
+
+		StatusRuntimeException excepcion = catchStatusRuntimeException(() -> stubBloqueante.actualizarSolicitud(
+				ActualizarSolicitudRequest.newBuilder().setUsuarioA("mateo").setUsuarioB("ana").setAceptada(true).build()));
+
+		assertThat(excepcion.getStatus().getCode()).isEqualTo(Status.Code.NOT_FOUND);
 	}
 
 	@Test
