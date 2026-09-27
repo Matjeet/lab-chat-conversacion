@@ -424,9 +424,10 @@ routing key distinta. Un consumidor que no conozca `meta` (o un campo nuevo dent
 ignorarlo sin fallar, no tratarlo como un error — así lo hace
 `chat-notificaciones`, el único consumidor hoy (ver su propio `CLAUDE.md`). Un cliente
 interesado debe declarar su propia cola y enlazarla al
-exchange con la routing key que le interese (`notificacion.solicitud`,
-`notificacion.solicitud.actualizada`, o `notificacion.#` para recibir cualquier tipo futuro) —
-`chat-conversacion` no declara ninguna cola, solo el exchange.
+exchange con la routing key que le interese: `notificacion.solicitud` (o `notificacion.#` para
+cualquier tipo de creación futuro) para esto, `actualizacion.solicitud` (o `actualizacion.#`)
+para lo de §7.2 — dos prefijos separados a propósito, para poder suscribirse a uno sin recibir
+también el otro. `chat-conversacion` no declara ninguna cola, solo el exchange.
 
 ---
 
@@ -477,10 +478,12 @@ documento por cada aceptación.
 
 ### 7.2 Notificación por RabbitMQ
 
-Mismo exchange y misma forma de mensaje que `CrearSolicitud` (§6.3), pero con **routing key
-distinta**, `notificacion.solicitud.actualizada` (para que un consumidor pueda distinguir la
-creación de la resolución si le interesa, aunque `chat-notificaciones` hoy esté suscrito a
-ambas con el comodín `notificacion.#`):
+Mismo exchange y misma forma de mensaje que `CrearSolicitud` (§6.3), pero con un **prefijo de
+routing key distinto**, `actualizacion.solicitud` — no `notificacion.solicitud.algo`, a
+propósito: si empezara por `notificacion.` haría match también con el comodín
+`notificacion.#` que usa `chat-notificaciones` para las solicitudes nuevas (§6.3), y el mensaje
+le llegaría (y se procesaría) por las dos colas a la vez. `chat-notificaciones` enlaza una
+segunda cola aparte al comodín `actualizacion.#` para esto (ver su propio `CLAUDE.md`).
 
 ```json
 {
@@ -619,7 +622,7 @@ pueden listar servicios y construir la petición sin el archivo, apuntando solo 
 
 | Fecha | Cambio |
 |---|---|
-| 2026-09-27 | Se agrega `ConversacionGrpcService/ActualizarSolicitud`: acepta o rechaza una solicitud de chat (buscándola por los dos usuarios), registra la amistad en la colección `amigos` si se acepta, y notifica por RabbitMQ (routing key `notificacion.solicitud.actualizada`) con el `meta` ya resuelto. |
+| 2026-09-27 | Se agrega `ConversacionGrpcService/ActualizarSolicitud`: acepta o rechaza una solicitud de chat (buscándola por los dos usuarios), registra la amistad en la colección `amigos` si se acepta, y notifica por RabbitMQ (routing key `actualizacion.solicitud` — prefijo `actualizacion.`, no `notificacion.`, para no hacer match con el comodín de las solicitudes nuevas) con el `meta` ya resuelto. |
 | 2026-09-26 | El mensaje AMQP de §6.3 suma el campo `meta` (objeto con información adicional propia de `tipo` — para `"solicitud"`, `aceptada` y `pendiente`, el mismo par de campos que `SolicitudResponse`, para poder distinguir pendiente/aceptada/rechazada). |
 | 2026-09-24 | `SolicitudResponse` suma el campo `pendiente`. Nueva regla de negocio: `CrearSolicitud` solo bloquea (`ALREADY_EXISTS`) si ya existe una solicitud **pendiente** entre los dos usuarios — antes bloqueaba cualquier solicitud previa, sin distinguir su estado; en ese caso no se persiste nada nuevo ni se publica nada en RabbitMQ. |
 | 2026-09-23 | Se agrega `ConversacionGrpcService/CrearSolicitud`: crea una solicitud de chat (paso previo obligatorio para poder chatear), valida `solicitante`/`solicitado` contra `chat-registro` por gRPC (`RegistroGrpcClient`) y notifica por RabbitMQ (exchange `chat.notificaciones`). Aceptar/rechazar la solicitud no está implementado todavía. |

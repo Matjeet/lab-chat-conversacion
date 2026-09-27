@@ -49,7 +49,8 @@ Paquete por feature bajo `com.arquetipo.demo`, mismo patrón que `chat-registro/
     por un protocolo se reenvíe a alguien conectado por el otro.
   - `NotificadorAmqp` — publica en el exchange de RabbitMQ (`RabbitMqConfig`), una notificación
     por creación (routing key `notificacion.solicitud`) y otra por resolución (routing key
-    `notificacion.solicitud.actualizada`); un fallo al publicar se registra pero no revierte
+    `actualizacion.solicitud` — prefijo distinto a propósito, para que un consumidor pueda
+    suscribirse a una sin recibir la otra); un fallo al publicar se registra pero no revierte
     la operación ya persistida (aviso best-effort).
   - `ChatCursor` — codifica/decodifica el cursor opaco de paginación de `listaChats`.
 
