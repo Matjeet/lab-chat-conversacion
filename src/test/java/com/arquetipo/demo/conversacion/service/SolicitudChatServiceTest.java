@@ -13,8 +13,10 @@ import static org.mockito.Mockito.when;
 import com.arquetipo.demo.common.exception.DuplicateResourceException;
 import com.arquetipo.demo.common.exception.ResourceNotFoundException;
 import com.arquetipo.demo.common.exception.ValidationException;
+import com.arquetipo.demo.conversacion.domain.Amistad;
 import com.arquetipo.demo.conversacion.domain.SolicitudChat;
 import com.arquetipo.demo.conversacion.mapper.SolicitudChatMapper;
+import com.arquetipo.demo.conversacion.repository.AmistadRepository;
 import com.arquetipo.demo.conversacion.repository.SolicitudChatRepository;
 import com.arquetipo.demo.conversacion.web.dto.SolicitudChatResponse;
 import com.arquetipo.demo.registro.grpc.RegistroGrpcClient;
@@ -22,15 +24,17 @@ import java.time.Instant;
 import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 
 /**
  * Prueba las reglas de negocio de {@link SolicitudChatService} de forma aislada, con
- * {@link SolicitudChatRepository} y {@link RegistroGrpcClient} mockeados (mismo patron que
- * {@code ConversacionGrpcControllerTest} para el resto del gRPC).
+ * {@link SolicitudChatRepository}, {@link AmistadRepository} y {@link RegistroGrpcClient}
+ * mockeados (mismo patron que {@code ConversacionGrpcControllerTest} para el resto del gRPC).
  */
 class SolicitudChatServiceTest {
 
 	private SolicitudChatRepository repository;
+	private AmistadRepository amistadRepository;
 	private RegistroGrpcClient registroClient;
 	private NotificadorAmqp notificadorAmqp;
 	private SolicitudChatService service;
@@ -38,9 +42,11 @@ class SolicitudChatServiceTest {
 	@BeforeEach
 	void iniciar() {
 		repository = mock(SolicitudChatRepository.class);
+		amistadRepository = mock(AmistadRepository.class);
 		registroClient = mock(RegistroGrpcClient.class);
 		notificadorAmqp = mock(NotificadorAmqp.class);
-		service = new SolicitudChatService(repository, new SolicitudChatMapper(), registroClient, notificadorAmqp);
+		service = new SolicitudChatService(
+				repository, amistadRepository, new SolicitudChatMapper(), registroClient, notificadorAmqp);
 	}
 
 	@Test
@@ -103,5 +109,69 @@ class SolicitudChatServiceTest {
 
 		verify(repository, never()).save(any());
 		verify(notificadorAmqp, never()).notificarSolicitud(any(), any(), anyBoolean(), anyBoolean());
+	}
+
+	@Test
+	void actualizar_conAceptadaTrue_resuelvePendienteRegistraAmistadYNotifica() {
+		SolicitudChat pendiente = new SolicitudChat();
+		pendiente.setId("1");
+		pendiente.setSolicitante("mateo");
+		pendiente.setSolicitado("ana");
+		pendiente.setAceptada(false);
+		pendiente.setPendiente(true);
+		pendiente.setCreadaEn(Instant.parse("2026-09-23T20:00:00Z"));
+		when(repository.findPendienteEntreUsuarios("ana", "mateo")).thenReturn(Optional.of(pendiente));
+		when(repository.save(any(SolicitudChat.class))).thenAnswer(invocacion -> invocacion.getArgument(0));
+
+		SolicitudChatResponse respuesta = service.actualizar("ana", "mateo", true);
+
+		assertThat(respuesta.solicitante()).isEqualTo("mateo");
+		assertThat(respuesta.solicitado()).isEqualTo("ana");
+		assertThat(respuesta.aceptada()).isTrue();
+		assertThat(respuesta.pendiente()).isFalse();
+
+		ArgumentCaptor<Amistad> amistadCaptor = ArgumentCaptor.forClass(Amistad.class);
+		verify(amistadRepository).save(amistadCaptor.capture());
+		assertThat(amistadCaptor.getValue().getUsuarioA()).isEqualTo("mateo");
+		assertThat(amistadCaptor.getValue().getUsuarioB()).isEqualTo("ana");
+
+		verify(notificadorAmqp).notificarActualizacionSolicitud("mateo", "ana", true);
+	}
+
+	@Test
+	void actualizar_conAceptadaFalse_resuelvePendienteSinRegistrarAmistad() {
+		SolicitudChat pendiente = new SolicitudChat();
+		pendiente.setSolicitante("mateo");
+		pendiente.setSolicitado("ana");
+		pendiente.setPendiente(true);
+		when(repository.findPendienteEntreUsuarios("mateo", "ana")).thenReturn(Optional.of(pendiente));
+		when(repository.save(any(SolicitudChat.class))).thenAnswer(invocacion -> invocacion.getArgument(0));
+
+		SolicitudChatResponse respuesta = service.actualizar("mateo", "ana", false);
+
+		assertThat(respuesta.aceptada()).isFalse();
+		assertThat(respuesta.pendiente()).isFalse();
+		verify(amistadRepository, never()).save(any());
+		verify(notificadorAmqp).notificarActualizacionSolicitud("mateo", "ana", false);
+	}
+
+	@Test
+	void actualizar_sinSolicitudPendienteEntreAmbos_lanzaResourceNotFoundException() {
+		when(repository.findPendienteEntreUsuarios("mateo", "ana")).thenReturn(Optional.empty());
+
+		assertThatThrownBy(() -> service.actualizar("mateo", "ana", true))
+				.isInstanceOf(ResourceNotFoundException.class);
+
+		verify(repository, never()).save(any());
+		verify(amistadRepository, never()).save(any());
+		verify(notificadorAmqp, never()).notificarActualizacionSolicitud(any(), any(), anyBoolean());
+	}
+
+	@Test
+	void actualizar_haciaUnoMismo_lanzaValidationExceptionSinConsultarNada() {
+		assertThatThrownBy(() -> service.actualizar("mateo", "mateo", true))
+				.isInstanceOf(ValidationException.class);
+
+		verify(repository, never()).findPendienteEntreUsuarios(any(), any());
 	}
 }

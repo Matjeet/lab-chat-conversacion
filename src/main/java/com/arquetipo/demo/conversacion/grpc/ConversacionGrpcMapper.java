@@ -1,5 +1,6 @@
 package com.arquetipo.demo.conversacion.grpc;
 
+import com.arquetipo.demo.conversacion.web.dto.ActualizarSolicitudEntrante;
 import com.arquetipo.demo.conversacion.web.dto.CursorPage;
 import com.arquetipo.demo.conversacion.web.dto.MensajeEntrante;
 import com.arquetipo.demo.conversacion.web.dto.MensajeResponse;
@@ -91,6 +92,10 @@ public class ConversacionGrpcMapper {
 
 	SolicitudEntrante aSolicitudEntrante(CrearSolicitudRequest request) {
 		return new SolicitudEntrante(request.getSolicitante(), request.getSolicitado());
+	}
+
+	ActualizarSolicitudEntrante aActualizarSolicitudEntrante(ActualizarSolicitudRequest request) {
+		return new ActualizarSolicitudEntrante(request.getUsuarioA(), request.getUsuarioB(), request.getAceptada());
 	}
 
 	SolicitudResponse aSolicitudResponse(SolicitudChatResponse solicitud) {
