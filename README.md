@@ -74,8 +74,9 @@ Paquete por feature bajo `com.arquetipo.demo`, mismo patrón que `chat-registro/
   actualiza el avatar si ya existía — idempotente, porque RabbitMQ entrega al menos una vez;
   un mensaje sin `username` se descarta con un `WARN`, sin reencolarlo) y
   `amqp/PerfilListener` (`@RabbitListener` de la cola propia) + `amqp/dto/UsuarioRegistradoEntrante`
-  (el mensaje tal como lo publica `chat-registro`). Es un **consumidor**, no expone nada por
-  gRPC/REST todavía.
+  (el mensaje tal como lo publica `chat-registro`). Es un **consumidor**; lo único que lo lee
+  hoy es `ListaChats`, que adjunta el `avatar` de cada `otro_usuario` (`PerfilService#avataresPorUsername`,
+  una sola consulta por página).
 - `registro/grpc/` — `RegistroGrpcClient`: cliente gRPC de `chat-registro` (copia local y
   mínima de su `.proto`, solo `ExisteUsername`), usado por `SolicitudChatService#crear` para
   validar usernames (`actualizar` no vuelve a validarlos). Mismo patrón que el cliente

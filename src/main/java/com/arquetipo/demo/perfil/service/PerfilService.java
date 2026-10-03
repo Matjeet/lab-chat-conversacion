@@ -2,6 +2,9 @@ package com.arquetipo.demo.perfil.service;
 
 import com.arquetipo.demo.perfil.domain.Perfil;
 import com.arquetipo.demo.perfil.repository.PerfilRepository;
+import java.util.Collection;
+import java.util.HashMap;
+import java.util.Map;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
@@ -40,5 +43,26 @@ public class PerfilService {
 		perfil.setAvatar(avatar == null || avatar.isBlank() ? null : avatar);
 		repository.save(perfil);
 		log.debug("<< registrar() -> {}", nuevo ? "perfil creado" : "perfil actualizado");
+	}
+
+	/**
+	 * Avatar de cada username pedido, en una sola consulta. Solo trae a quien tiene perfil
+	 * <b>y</b> avatar: un username sin perfil guardado todavia, o que no eligio avatar, no
+	 * aparece en el mapa (quien llama debe tratar la ausencia como "sin avatar"). La busqueda
+	 * distingue mayusculas, igual que {@link #registrar}.
+	 */
+	public Map<String, String> avataresPorUsername(Collection<String> usernames) {
+		log.debug(">> avataresPorUsername(cantidad={})", usernames.size());
+		if (usernames.isEmpty()) {
+			return Map.of();
+		}
+		Map<String, String> avatares = new HashMap<>();
+		repository.findByUsernameIn(usernames).forEach(perfil -> {
+			if (perfil.getAvatar() != null) {
+				avatares.put(perfil.getUsername(), perfil.getAvatar());
+			}
+		});
+		log.debug("<< avataresPorUsername() -> {} con avatar", avatares.size());
+		return avatares;
 	}
 }

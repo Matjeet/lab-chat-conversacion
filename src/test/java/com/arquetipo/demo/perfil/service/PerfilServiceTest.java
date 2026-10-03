@@ -9,6 +9,8 @@ import static org.mockito.Mockito.when;
 
 import com.arquetipo.demo.perfil.domain.Perfil;
 import com.arquetipo.demo.perfil.repository.PerfilRepository;
+import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -62,6 +64,28 @@ class PerfilServiceTest {
 		ArgumentCaptor<Perfil> captor = ArgumentCaptor.forClass(Perfil.class);
 		verify(repository).save(captor.capture());
 		assertThat(captor.getValue().getAvatar()).isNull();
+	}
+
+	@Test
+	void avataresPorUsername_devuelveSoloQuienTienePerfilYAvatar() {
+		Perfil conAvatar = new Perfil();
+		conAvatar.setUsername("ana");
+		conAvatar.setAvatar("https://cdn.example/ana.png");
+		Perfil sinAvatar = new Perfil();
+		sinAvatar.setUsername("beto");
+		when(repository.findByUsernameIn(List.of("ana", "beto", "sin_perfil")))
+				.thenReturn(List.of(conAvatar, sinAvatar));
+
+		Map<String, String> avatares = service.avataresPorUsername(List.of("ana", "beto", "sin_perfil"));
+
+		assertThat(avatares).containsExactly(Map.entry("ana", "https://cdn.example/ana.png"));
+	}
+
+	@Test
+	void avataresPorUsername_sinUsernames_noConsultaLaBase() {
+		assertThat(service.avataresPorUsername(List.of())).isEmpty();
+
+		verify(repository, never()).findByUsernameIn(any());
 	}
 
 	@Test

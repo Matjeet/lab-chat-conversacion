@@ -100,6 +100,7 @@ message ListaChatsRequest {
 message ChatResumen {
   string otro_usuario = 1;
   MensajeEntregado ultimo_mensaje = 2;
+  optional string avatar = 3;
 }
 
 message ListaChatsResponse {
@@ -299,6 +300,7 @@ punto exacto" — estable aunque cambie el orden de lo que ya se pidió.
 |---|---|---|
 | `otro_usuario` | `string` | La otra persona de la conversación (nunca `ListaChatsRequest.usuario`). |
 | `ultimo_mensaje` | `MensajeEntregado` | El mensaje más reciente entre ambos, en cualquiera de los dos sentidos (§3.3 para la forma de `MensajeEntregado`). |
+| `avatar` | `optional string` | Avatar de `otro_usuario` (nunca el de quien pregunta), tal cual lo guardó `chat-registro`: un enlace `http(s)` o una etiqueta `<Blobatar .../>`. Se lee de la colección `perfil` (que llena el consumidor de RabbitMQ del `README.md`), en **una sola consulta para toda la página**. **Ausente (`has_avatar = false`) si esa persona no eligió uno, o si todavía no hay un perfil guardado para su username** — p. ej. un usuario dado de alta antes de que existiera esa integración. La búsqueda distingue mayúsculas: si el chat se guardó con un username escrito distinto al registrado (`ANA` frente a `ana`), no encuentra el perfil y el avatar queda ausente. |
 
 Si `usuario` no tiene ningún mensaje con nadie, la respuesta es `content: []`, `has_more:
 false` — no es un error.
@@ -622,6 +624,7 @@ pueden listar servicios y construir la petición sin el archivo, apuntando solo 
 
 | Fecha | Cambio |
 |---|---|
+| 2026-10-03 | `ChatResumen` (respuesta de `ListaChats`) suma `avatar` (`optional string`): el avatar de `otro_usuario`, leído de la colección `perfil`. |
 | 2026-09-27 | Se agrega `ConversacionGrpcService/ActualizarSolicitud`: acepta o rechaza una solicitud de chat (buscándola por los dos usuarios), registra la amistad en la colección `amigos` si se acepta, y notifica por RabbitMQ (routing key `actualizacion.solicitud` — prefijo `actualizacion.`, no `notificacion.`, para no hacer match con el comodín de las solicitudes nuevas) con el `meta` ya resuelto. |
 | 2026-09-26 | El mensaje AMQP de §6.3 suma el campo `meta` (objeto con información adicional propia de `tipo` — para `"solicitud"`, `aceptada` y `pendiente`, el mismo par de campos que `SolicitudResponse`, para poder distinguir pendiente/aceptada/rechazada). |
 | 2026-09-24 | `SolicitudResponse` suma el campo `pendiente`. Nueva regla de negocio: `CrearSolicitud` solo bloquea (`ALREADY_EXISTS`) si ya existe una solicitud **pendiente** entre los dos usuarios — antes bloqueaba cualquier solicitud previa, sin distinguir su estado; en ese caso no se persiste nada nuevo ni se publica nada en RabbitMQ. |
