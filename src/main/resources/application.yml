@@ -75,6 +75,13 @@ app:
     # Exchange (topic) donde se publican las notificaciones (ver RabbitMqConfig /
     # NotificadorAmqp). La routing key distingue el tipo (hoy solo "notificacion.solicitud").
     notificaciones-exchange: ${RABBITMQ_NOTIFICACIONES_EXCHANGE:chat.notificaciones}
+    # Altas de usuario que publica chat-registro (perfil.amqp.PerfilListener): exchange (topic)
+    # que declara chat-registro y del que este servicio solo consume; la cola (durable) y el
+    # binding SI los declara y los posee este servicio. Routing key tal cual la publica
+    # chat-registro (registro.#).
+    perfil-exchange: ${RABBITMQ_PERFIL_EXCHANGE:chat.conversacion}
+    perfil-queue: ${RABBITMQ_PERFIL_QUEUE:chat-conversacion.perfil}
+    perfil-routing-key: ${RABBITMQ_PERFIL_ROUTING_KEY:registro.#}
 
 logging:
   level:

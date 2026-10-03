@@ -6,6 +6,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.amqp.AmqpException;
 import org.springframework.amqp.core.TopicExchange;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Component;
 
 /**
@@ -30,7 +31,8 @@ public class NotificadorAmqp {
 	private final RabbitTemplate rabbitTemplate;
 	private final TopicExchange exchange;
 
-	public NotificadorAmqp(RabbitTemplate rabbitTemplate, TopicExchange notificacionesExchange) {
+	public NotificadorAmqp(RabbitTemplate rabbitTemplate,
+			@Qualifier("notificacionesExchange") TopicExchange notificacionesExchange) {
 		this.rabbitTemplate = rabbitTemplate;
 		this.exchange = notificacionesExchange;
 	}
