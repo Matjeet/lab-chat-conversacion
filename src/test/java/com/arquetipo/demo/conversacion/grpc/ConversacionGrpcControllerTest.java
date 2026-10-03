@@ -108,7 +108,7 @@ class ConversacionGrpcControllerTest {
 		MensajeResponse ultimoMensaje = new MensajeResponse(
 				"1", "mateo", "ana", "hola", Instant.parse("2026-09-18T20:00:00Z"));
 		com.arquetipo.demo.conversacion.web.dto.ChatResumen resumen =
-				new com.arquetipo.demo.conversacion.web.dto.ChatResumen("ana", ultimoMensaje);
+				new com.arquetipo.demo.conversacion.web.dto.ChatResumen("ana", "https://cdn.example/ana.png", ultimoMensaje);
 		CursorPage<com.arquetipo.demo.conversacion.web.dto.ChatResumen> pagina =
 				new CursorPage<>(List.of(resumen), "cursor-siguiente", true);
 		when(service.listaChats(eq("mateo"), eq(""), anyInt())).thenReturn(pagina);
@@ -119,6 +119,8 @@ class ConversacionGrpcControllerTest {
 
 		assertThat(respuesta.getContentCount()).isEqualTo(1);
 		assertThat(respuesta.getContent(0).getOtroUsuario()).isEqualTo("ana");
+		assertThat(respuesta.getContent(0).hasAvatar()).isTrue();
+		assertThat(respuesta.getContent(0).getAvatar()).isEqualTo("https://cdn.example/ana.png");
 		assertThat(respuesta.getContent(0).getUltimoMensaje().getContenido()).isEqualTo("hola");
 		assertThat(respuesta.getNextCursor()).isEqualTo("cursor-siguiente");
 		assertThat(respuesta.getHasMore()).isTrue();

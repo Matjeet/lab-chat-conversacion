@@ -83,10 +83,15 @@ public class ConversacionGrpcMapper {
 		ListaChatsResponse.Builder builder = ListaChatsResponse.newBuilder()
 				.setNextCursor(pagina.nextCursor())
 				.setHasMore(pagina.hasMore());
-		pagina.content().forEach(chatResumen -> builder.addContent(ChatResumen.newBuilder()
-				.setOtroUsuario(chatResumen.otroUsuario())
-				.setUltimoMensaje(aMensajeEntregado(chatResumen.ultimoMensaje()))
-				.build()));
+		pagina.content().forEach(chatResumen -> {
+			ChatResumen.Builder resumen = ChatResumen.newBuilder()
+					.setOtroUsuario(chatResumen.otroUsuario())
+					.setUltimoMensaje(aMensajeEntregado(chatResumen.ultimoMensaje()));
+			if (chatResumen.avatar() != null) {
+				resumen.setAvatar(chatResumen.avatar());
+			}
+			builder.addContent(resumen.build());
+		});
 		return builder.build();
 	}
 

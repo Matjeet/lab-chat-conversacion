@@ -118,6 +118,10 @@ message ChatResumen {
   string otro_usuario = 1;
   // El mensaje mas reciente entre ambos, en cualquiera de los dos sentidos.
   MensajeEntregado ultimo_mensaje = 2;
+  // Avatar de otro_usuario, tal cual lo guardo chat-registro al registrarlo (enlace http(s) o
+  // etiqueta <Blobatar .../>), leido de la coleccion "perfil". Ausente (has_avatar = false) si
+  // esa persona no eligio uno o si todavia no hay perfil guardado para ese username.
+  optional string avatar = 3;
 }
 
 message ListaChatsResponse {
