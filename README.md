@@ -68,6 +68,14 @@ Paquete por feature bajo `com.arquetipo.demo`, mismo patrón que `chat-registro/
     equivalente todavía en REST/WebSocket) + `UsuarioMetadataInterceptor` (equivalente gRPC de
     `UsuarioHandshakeInterceptor`: valida la cabecera de metadata `usuario` del stream `Chat`,
     no aplica al resto de rpc). Ver `docs/contrato-grpc-conversacion.md`.
+- `perfil/` — copia local del perfil público de cada usuario (`username` + `avatar`), alimentada
+  por RabbitMQ: `domain/Perfil` (documento de la colección `perfil`, `username` único),
+  `repository/PerfilRepository`, `service/PerfilService` (`registrar`: crea el perfil, o
+  actualiza el avatar si ya existía — idempotente, porque RabbitMQ entrega al menos una vez;
+  un mensaje sin `username` se descarta con un `WARN`, sin reencolarlo) y
+  `amqp/PerfilListener` (`@RabbitListener` de la cola propia) + `amqp/dto/UsuarioRegistradoEntrante`
+  (el mensaje tal como lo publica `chat-registro`). Es un **consumidor**, no expone nada por
+  gRPC/REST todavía.
 - `registro/grpc/` — `RegistroGrpcClient`: cliente gRPC de `chat-registro` (copia local y
   mínima de su `.proto`, solo `ExisteUsername`), usado por `SolicitudChatService#crear` para
   validar usernames (`actualizar` no vuelve a validarlos). Mismo patrón que el cliente
@@ -110,6 +118,15 @@ podman run -d --name rabbitmq-dev --hostname rabbitmq-dev \
 ```
 
 Panel de administración en http://localhost:15672 (usuario/clave por defecto: `guest`/`guest`).
+
+Además de publicar, este servicio **consume** las altas de usuario que publica `chat-registro`
+para llenar la colección `perfil`: declara el exchange `chat.conversacion` (topic, durable — el
+mismo que declara `chat-registro`, RabbitMQ no lo vuelve a crear si ya existe), su propia cola
+durable `chat-conversacion.perfil` y el binding `registro.#` (la routing key con la que publica
+`chat-registro`). Mensaje esperado: `{ "username": "...", "avatar": "..." | null }`.
+Configurable con `RABBITMQ_PERFIL_EXCHANGE`, `RABBITMQ_PERFIL_QUEUE` y
+`RABBITMQ_PERFIL_ROUTING_KEY`. Al ser una cola durable, si este servicio está caído cuando se
+registra alguien, el alta espera en la cola y se procesa al volver a arrancar.
 
 Y, para que `CrearSolicitud` pueda validar los usernames, una instancia de `chat-registro`
 alcanzable por gRPC (por defecto `localhost:9090`, ver `servicios.registro.*` / variables
