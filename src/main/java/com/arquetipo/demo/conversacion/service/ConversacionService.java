@@ -9,7 +9,9 @@ import com.arquetipo.demo.conversacion.web.dto.CursorPage;
 import com.arquetipo.demo.conversacion.web.dto.MensajeEntrante;
 import com.arquetipo.demo.conversacion.web.dto.MensajeResponse;
 import com.arquetipo.demo.conversacion.web.dto.PageResponse;
+import com.arquetipo.demo.perfil.service.PerfilService;
 import java.util.List;
+import java.util.Map;
 import lombok.extern.slf4j.Slf4j;
 import org.bson.types.ObjectId;
 import org.springframework.data.domain.Page;
@@ -28,12 +30,14 @@ public class ConversacionService {
 	private final MensajeRepository repository;
 	private final MensajeMapper mapper;
 	private final NotificadorTiempoReal notificador;
+	private final PerfilService perfilService;
 
 	public ConversacionService(MensajeRepository repository, MensajeMapper mapper,
-			NotificadorTiempoReal notificador) {
+			NotificadorTiempoReal notificador, PerfilService perfilService) {
 		this.repository = repository;
 		this.mapper = mapper;
 		this.notificador = notificador;
+		this.perfilService = perfilService;
 	}
 
 	public MensajeResponse enviar(String remitente, MensajeEntrante entrante) {
@@ -92,8 +96,18 @@ public class ConversacionService {
 					new ObjectId(ultimoDeLaPagina.getId())).codificar();
 		}
 
+		// Un solo viaje a la coleccion "perfil" para toda la pagina (no una consulta por chat).
+		List<String> otrosUsuarios = pagina.stream()
+				.map(mensaje -> otroUsuario(usuario, mensaje))
+				.distinct()
+				.toList();
+		Map<String, String> avatares = perfilService.avataresPorUsername(otrosUsuarios);
+
 		List<ChatResumen> contenido = pagina.stream()
-				.map(mensaje -> new ChatResumen(otroUsuario(usuario, mensaje), mapper.toResponse(mensaje)))
+				.map(mensaje -> {
+					String otro = otroUsuario(usuario, mensaje);
+					return new ChatResumen(otro, avatares.get(otro), mapper.toResponse(mensaje));
+				})
 				.toList();
 
 		CursorPage<ChatResumen> respuesta = new CursorPage<>(contenido, siguienteCursor, hayMas);
